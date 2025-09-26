@@ -43,7 +43,7 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
         # anomaly_type_batch: (追加) その画像の異常タイプ名 (str, 例: 'scratch', 'hole', 'good')
         #image, label, mask, class_name_batch, anomaly_type_batch = batch # ここを変更  9/27 btadで訓練するために変更      
         image, label, mask, _ = batch    
-        all_images_raw.append(image.cpu().numpy())       
+        #all_images_raw.append(image.cpu().numpy())       
         gt_mask_list.append(mask.squeeze(1).cpu().numpy().astype(bool))
         label_list.append(label.cpu().numpy().astype(bool).ravel())
         
