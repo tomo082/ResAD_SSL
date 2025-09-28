@@ -329,11 +329,11 @@ def main(args):
                 # --- 変更点ここまで ---            
 
                 # 各クラスの評価結果から特徴量とラベルデータを一時的に保存
-                current_epoch_class_data_for_saving[class_name_eval] = {
-                    'features': metrics['features'],
-                    'anomaly_types': metrics['anomaly_types'],
-                    'gts_labels': metrics['gts_labels']
-                }            
+              #  current_epoch_class_data_for_saving[class_name_eval] = {
+               #     'features': metrics['features'],
+                #    'anomaly_types': metrics['anomaly_types'],
+                 #   'gts_labels': metrics['gts_labels']
+               # }            
             s1_res = np.array(s1_res)
             s2_res = np.array(s2_res)
             s_res = np.array(s_res)
