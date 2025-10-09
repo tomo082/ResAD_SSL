@@ -10,7 +10,7 @@ Intuitive illustration of class-generalizable anomaly detection and conceptual i
 
 ---
 
-**Update: The code in this repository is not exactly the same with the method in the NeurIPS conference paper. We further improved the method and open-source the improved code, which can achieve better performance and is also more robust. For more details, please see our journal version paper (due to some review reasons, the journal version paper is not currently open for access).**
+**Update: The code in this repository is not exactly the same with the method in the NeurIPS conference paper. We further improved the method and open-source the improved code, which can achieve better performance and is also more robust. For more details, please see our journal version paper ([https://arxiv.org/abs/2509.23741](https://arxiv.org/abs/2509.23741)).**
 
 ## Installation
 Install all packages (the same version with ours) by the following command:
@@ -94,6 +94,13 @@ If you find this repository useful, please consider citing our work:
       year={2024},
       booktitle={Thirty-Eighth Annual Conference on Neural Information Processing Systems, NeurIPS 2024},
       url={https://arxiv.org/abs/2410.20047},
+      primaryClass={cs.CV}
+}
+@article{ResAD++,
+      title={ResAD++: Towards Class Agnostic Anomaly Detection via Residual Feature Learning}, 
+      author={Xincheng Yao and Chao Shi and Muming Zhao and Guangtao Zhai and Chongyang Zhang},
+      year={2025},
+      url={https://arxiv.org/abs/2509.23741},
       primaryClass={cs.CV}
 }
 ```
