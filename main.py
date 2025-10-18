@@ -236,7 +236,8 @@ def main(args):
                 state_dict = {'vq_ops': vq_ops.state_dict(),
                               'constraintor': constraintor.state_dict(),
                               'estimators': [estimator.state_dict() for estimator in estimators]}
-                torch.save(state_dict, os.path.join(args.checkpoint_path, f'{args.setting}_checkpoints.pth'))
+                torch.save(state_dict, os.path.join(args.checkpoint_path, f'{args.setting}_epoch_{epoch}_checkpoints.pth'))
+                #torch.save(state_dict, os.path.join(args.checkpoint_path, f'{args.setting}_checkpoints.pth'))
 
 
 def load_mc_reference_features(root_dir: str, class_names, device: torch.device, num_shot=4):
