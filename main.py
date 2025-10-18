@@ -94,7 +94,7 @@ def main(args):
     optimizer1 = torch.optim.Adam(params, lr=args.lr, weight_decay=0.0005)
     scheduler1 = torch.optim.lr_scheduler.MultiStepLR(optimizer1, milestones=[70, 90], gamma=0.1)
     
-    best_pro = 0
+    best_img_auc = 0
     N_batch = 8192
     for epoch in range(args.epochs):
         vq_ops.train()
@@ -229,9 +229,9 @@ def main(args):
             print('(Merged) Average Image AUC | AP | F1_Score: {:.3f} | {:.3f} | {:.3f}, Average Pixel AUC | AP | F1_Score | AUPRO: {:.3f} | {:.3f} | {:.3f} | {:.3f}'.format(
                 img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro))
             
-            if pix_aupro > best_pro:
+            if img_auc > best_img_auc:
                 os.makedirs(args.checkpoint_path, exist_ok=True)
-                best_pro = pix_aupro
+                best_img_auc = img_auc
                 state_dict = {'vq_ops': vq_ops.state_dict(),
                               'constraintor': constraintor.state_dict(),
                               'estimators': [estimator.state_dict() for estimator in estimators]}
