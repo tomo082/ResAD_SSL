@@ -142,12 +142,12 @@ def main(args):
             layer1_features.append(patch_tokens[0])
             layer2_features.append(patch_tokens[1])
             layer3_features.append(patch_tokens[2]) 
-        #layer1_features = torch.cat(layer1_features, dim=0)
-        #layer2_features = torch.cat(layer2_features, dim=0)
-        #layer3_features = torch.cat(layer3_features, dim=0)
-        #print(layer1_features.shape)
-        #print(layer2_features.shape)
-        #print(layer3_features.shape)
+        layer1_features = torch.cat(layer1_features, dim=0)
+        layer2_features = torch.cat(layer2_features, dim=0)
+        layer3_features = torch.cat(layer3_features, dim=0)
+        print(layer1_features.shape)
+        print(layer2_features.shape)
+        print(layer3_features.shape)
         #修正10/26
         layer1_channels = layer1_features.shape[1]
         layer2_channels = layer2_features.shape[1]
