@@ -76,9 +76,10 @@ def main(args):
     　　encoder = encoder.to(args.device)
     　　feat_dims = encoder.feature_info.channels()
     elif args.backbone == 'tf_efficientnet_b6':#10/26追加
-　　　　　 features = encoder(image)
-          mfeatures = get_matched_ref_features(features, ref_features)
-          rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
+    　　encoder = timm.create_model('tf_efficientnet_b6', features_only=True, 
+            　　out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
+    　　encoder = encoder.to(args.device)
+    　　feat_dims = encoder.feature_info.channels()
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
     vq_ops = MultiScaleVQ(num_embeddings=args.num_embeddings, channels=feat_dims).to(args.device)
     optimizer_vq = torch.optim.Adam(vq_ops.parameters(), lr=args.lr, weight_decay=0.0005)
