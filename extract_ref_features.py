@@ -142,17 +142,21 @@ def main(args):
             layer1_features.append(patch_tokens[0])
             layer2_features.append(patch_tokens[1])
             layer3_features.append(patch_tokens[2]) 
-        layer1_features = torch.cat(layer1_features, dim=0)
-        layer2_features = torch.cat(layer2_features, dim=0)
-        layer3_features = torch.cat(layer3_features, dim=0)
-        print(layer1_features.shape)
-        print(layer2_features.shape)
-        print(layer3_features.shape)
-        
-        layer1_features = layer1_features.permute(0, 2, 3, 1).reshape(-1, 256)
-        layer2_features = layer2_features.permute(0, 2, 3, 1).reshape(-1, 512)
-        layer3_features = layer3_features.permute(0, 2, 3, 1).reshape(-1, 1024)
-        
+        #layer1_features = torch.cat(layer1_features, dim=0)
+        #layer2_features = torch.cat(layer2_features, dim=0)
+        #layer3_features = torch.cat(layer3_features, dim=0)
+        #print(layer1_features.shape)
+        #print(layer2_features.shape)
+        #print(layer3_features.shape)
+        #修正10/26
+        layer1_channels = layer1_features.shape[1]
+        layer2_channels = layer2_features.shape[1]
+        layer3_channels = layer3_features.shape[1]
+
+        layer1_features = layer1_features.permute(0, 2, 3, 1).reshape(-1, layer1_channels)
+        layer2_features = layer2_features.permute(0, 2, 3, 1).reshape(-1, layer2_channels)
+        layer3_features = layer3_features.permute(0, 2, 3, 1).reshape(-1, layer3_channels)
+        #修正終わり
         os.makedirs(os.path.join(args.save_dir, class_name), exist_ok=True)
         
         np.save(os.path.join(args.save_dir, class_name, 'layer1.npy'), layer1_features.cpu().numpy())
