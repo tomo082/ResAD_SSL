@@ -113,9 +113,14 @@ def main(args):
     image_size = 224
     device = 'cuda:0'
     root_dir = args.few_shot_dir
-    encoder = timm.create_model("wide_resnet50_2", features_only=True, 
-            out_indices=(1, 2, 3), pretrained=True).eval()
-    encoder.to(device)
+    if args.backbone == 'wide_resnet50_2':
+        encoder = timm.create_model('wide_resnet50_2', features_only=True,
+                out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
+        encoder = encoder.to(args.device)
+    elif args.backbone == 'tf_efficientnet_b6':#10/26追加
+        encoder = timm.create_model('tf_efficientnet_b6', features_only=True,
+                out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
+        encoder = encoder.to(args.device)
     
     if args.dataset in SETTINGS.keys():
         CLASS_NAMES = SETTINGS[args.dataset]
