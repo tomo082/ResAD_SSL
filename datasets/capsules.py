@@ -68,7 +68,7 @@ class CAPSULES(Dataset):
             T.ToTensor()])
         
         self.class_to_idx = {'capsules': 0 }
-        self.idx_to_class = {'capsules': 0 }
+        self.idx_to_class = {0:'capsules' }
 
     def __getitem__(self, idx):
         image_path, label, mask, class_name = self.image_paths[idx], self.labels[idx], self.mask_paths[idx], self.class_names[idx]
@@ -204,7 +204,7 @@ class CAPSULESANO(Dataset):
             T.CenterCrop(kwargs.get('crp_size')),
             T.ToTensor()])
         
-        self.class_to_idx = {0:'capsules'}
+        self.class_to_idx = {'capsules':0}
         self.idx_to_class = {0:'capsules'}
 
     def __getitem__(self, idx):
