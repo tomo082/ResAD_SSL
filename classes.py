@@ -49,3 +49,6 @@ VISA_TO_VISA = {'seen': ['candle', 'capsules', 'cashew', 'chewinggum', 'fryum',
 'macaroni1', 'macaroni2', 'pcb1', 'pcb2', 'pcb3', 'pcb4', 'pipe_fryum'],
 'unseen': ['candle', 'capsules', 'cashew', 'chewinggum', 'fryum',
 'macaroni1', 'macaroni2', 'pcb1', 'pcb2', 'pcb3', 'pcb4', 'pipe_fryum']}
+
+VISACAPSULES_TO_VISACAPSULES = {'seen': ['capsuels'],
+                 'unseen': ['capsuels']}
