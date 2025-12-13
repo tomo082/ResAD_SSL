@@ -13,7 +13,7 @@ IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
 
-class VISACAPSULES(Dataset):
+class CAPSULES(Dataset):
     
     CLASS_NAMES = ['capsules']
     
@@ -151,7 +151,7 @@ class VISACAPSULES(Dataset):
         self.idx_to_class = dict(zip(idxs, class_names))
 
 
-class VISACAPSULESANO(Dataset):
+class CAPSULESANO(Dataset):
     
     CLASS_NAMES = ['capsules']
     
