@@ -195,7 +195,11 @@ def main(args):
             s1_res, s2_res, s_res = [], [], []
             test_ref_features = load_mc_reference_features(args.test_ref_feature_dir, CLASSES['unseen'], args.device, args.num_ref_shot)
             for class_name in CLASSES['unseen']:
-                if class_name in MVTEC.CLASS_NAMES:
+                if args.classes == 'capsules':
+                    test_dataset = CAPSULES(args.test_dataset_dir, class_name=class_name, train=False,
+                                         normalize='w50',
+                                         img_size=224, crp_size=224, msk_size=224, msk_crp_size=224)                            
+                elif class_name in MVTEC.CLASS_NAMES:
                     test_dataset = MVTEC(args.test_dataset_dir, class_name=class_name, train=False,
                                          normalize='w50',
                                          img_size=224, crp_size=224, msk_size=224, msk_crp_size=224)
