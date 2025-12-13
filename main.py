@@ -46,7 +46,7 @@ def main(args):
     else:
         raise ValueError(f"Dataset setting must be in {SETTINGS.keys()}, but got {args.setting}.")
                 
-   if args.classes == 'capsules':  # from mvtec to other datasets
+    if args.classes == 'capsules':  # from mvtec to other datasets  # from mvtec to other datasets
         train_dataset1 = CAPSULES(args.train_dataset_dir, class_name=CLASSES['seen'], train=True, 
                                normalize="w50",
                                img_size=224, crp_size=224, msk_size=224, msk_crp_size=224)
@@ -60,7 +60,7 @@ def main(args):
             train_dataset2, batch_size=args.batch_size, shuffle=True, num_workers=8, drop_last=True
         )    
     
-   elif CLASSES['seen'][0] in MVTEC.CLASS_NAMES:  # from mvtec to other datasets
+    elif CLASSES['seen'][0] in MVTEC.CLASS_NAMES:  # from mvtec to other datasets
         train_dataset1 = MVTEC(args.train_dataset_dir, class_name=CLASSES['seen'], train=True, 
                                normalize="w50",
                                img_size=224, crp_size=224, msk_size=224, msk_crp_size=224)
