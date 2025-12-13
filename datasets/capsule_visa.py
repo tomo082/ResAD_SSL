@@ -13,10 +13,9 @@ IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
 
-class VISA(Dataset):
+class VISACAPSULES(Dataset):
     
-    CLASS_NAMES = ['candle', 'capsules', 'cashew', 'chewinggum', 'fryum',
-               'macaroni1', 'macaroni2', 'pcb1', 'pcb2', 'pcb3', 'pcb4', 'pipe_fryum']
+    CLASS_NAMES = ['capsules']
     
     def __init__(self, 
                  root: str,
@@ -68,12 +67,8 @@ class VISA(Dataset):
             T.CenterCrop(kwargs.get('crp_size')),
             T.ToTensor()])
         
-        self.class_to_idx = {'candle': 0, 'capsules': 1, 'cashew': 2, 'chewinggum': 3,
-                'fryum': 4, 'macaroni1': 5, 'macaroni2': 6, 'pcb1': 7,
-                'pcb2': 8, 'pcb3': 9, 'pcb4': 10, 'pipe_fryum': 11}
-        self.idx_to_class = {0: 'candle', 1: 'capsules', 2: 'cashew', 3: 'chewinggum',
-                4: 'fryum', 5: 'macaroni1', 6: 'macaroni2', 7: 'pcb1',
-                8: 'pcb2', 9: 'pcb3', 10: 'pcb4', 11: 'pipe_fryum'}
+        self.class_to_idx = {'capsules': 0 }
+        self.idx_to_class = {'capsules': 0 }
 
     def __getitem__(self, idx):
         image_path, label, mask, class_name = self.image_paths[idx], self.labels[idx], self.mask_paths[idx], self.class_names[idx]
@@ -156,10 +151,9 @@ class VISA(Dataset):
         self.idx_to_class = dict(zip(idxs, class_names))
 
 
-class VISAANO(Dataset):
+class VISACAPSULESANO(Dataset):
     
-    CLASS_NAMES = ['candle', 'capsules', 'cashew', 'chewinggum', 'fryum',
-               'macaroni1', 'macaroni2', 'pcb1', 'pcb2', 'pcb3', 'pcb4', 'pipe_fryum']
+    CLASS_NAMES = ['capsules']
     
     def __init__(self, 
                  root: str,
@@ -210,12 +204,8 @@ class VISAANO(Dataset):
             T.CenterCrop(kwargs.get('crp_size')),
             T.ToTensor()])
         
-        self.class_to_idx = {'candle': 0, 'capsules': 1, 'cashew': 2, 'chewinggum': 3,
-                'fryum': 4, 'macaroni1': 5, 'macaroni2': 6, 'pcb1': 7,
-                'pcb2': 8, 'pcb3': 9, 'pcb4': 10, 'pipe_fryum': 11}
-        self.idx_to_class = {0: 'candle', 1: 'capsules', 2: 'cashew', 3: 'chewinggum',
-                4: 'fryum', 5: 'macaroni1', 6: 'macaroni2', 7: 'pcb1',
-                8: 'pcb2', 9: 'pcb3', 10: 'pcb4', 11: 'pipe_fryum'}
+        self.class_to_idx = {0:'capsules'}
+        self.idx_to_class = {0:'capsules'}
 
     def __getitem__(self, idx):
         image_path, label, mask, class_name = self.image_paths[idx], self.labels[idx], self.mask_paths[idx], self.class_names[idx]
