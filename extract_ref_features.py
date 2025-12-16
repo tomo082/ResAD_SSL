@@ -245,5 +245,9 @@ if __name__ == '__main__':
     parser.add_argument('--bgadweight_dir', type=str, default="none")# 12/16追加
     parser.add_argument('--save_dir', type=str, default="./ref_features/w50/mvtec_4shot")
     parser.add_argument('--backbone', type=str, default="wide_resnet50_2")#10/26追加
+    parser.add_argument('--coupling_layers', type=int, default=10)
+    parser.add_argument('--clamp_alpha', type=float, default=1.9)
+    parser.add_argument('--pos_embed_dim', type=int, default=256)
+    parser.add_argument('--device', type=str, default="cuda:0")
     args = parser.parse_args()
     main(args)
