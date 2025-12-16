@@ -9,6 +9,7 @@ import timm
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as T
+from models.fc_flow import load_flow_model
 
 from datasets.mvtec import MVTEC
 from datasets.visa import VISA
@@ -18,7 +19,7 @@ from datasets.mpdd import MPDD
 from datasets.mvtec_loco import MVTECLOCO
 from datasets.brats import BRATS
 from models.imagebind import ImageBindModel
-
+from utils import load_weights
 
 class FEWSHOTDATA(Dataset):
     
@@ -121,7 +122,12 @@ def main(args):
         encoder = timm.create_model('tf_efficientnet_b6', features_only=True,
                 out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
         encoder = encoder.to(device)
+        
+    decoders = [load_flow_model(args, feat_dim) for feat_dim in feat_dims]
+    decoders = [decoder.to(args.device) for decoder in decoders]
     
+    if args.bgadweight_dir:
+        load_weights(encoder, decoders, args.bgadweight_dir)
     if args.dataset in SETTINGS.keys():
         CLASS_NAMES = SETTINGS[args.dataset]
     else:
