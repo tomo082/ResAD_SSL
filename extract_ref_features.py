@@ -122,7 +122,7 @@ def main(args):
         encoder = timm.create_model('tf_efficientnet_b6', features_only=True,
                 out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
         encoder = encoder.to(device)
-        
+    feat_dims = encoder.feature_info.channels()    
     decoders = [load_flow_model(args, feat_dim) for feat_dim in feat_dims]
     decoders = [decoder.to(args.device) for decoder in decoders]
     
