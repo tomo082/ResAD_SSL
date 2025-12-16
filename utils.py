@@ -276,3 +276,10 @@ def applying_EFDM(input_features_list, ref_features_list, alpha=0.5):
         aligned_features_list.append(aligned_features)
 
     return aligned_features_list
+    
+def load_weights(encoder, decoders, filename):#12/16追加
+    #path = os.path.join(WEIGHT_DIR, filename)
+    state = torch.load(filename)
+    encoder.load_state_dict(state['encoder_state_dict'], strict=False)
+    decoders = [decoder.load_state_dict(state, strict=False) for decoder, state in zip(decoders, state['decoder_state_dict'])]
+    print('Loading weights from {}'.format(filename))
