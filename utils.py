@@ -312,14 +312,18 @@ def load_weights(encoder, decoders, filename):
         print("  [ERROR] 'encoder_state_dict' not found in the file.")
 
     # --- Decoders のロード ---
+# --- Decoders のロード ---
     if 'decoder_state_dict' in state:
         print(f"--- Decoders Load Report ---")
-        # 元のコードのバグ(decodersリストの上書き)を修正
         for i, (decoder, d_state) in enumerate(zip(decoders, state['decoder_state_dict'])):
             dec_msg = decoder.load_state_dict(d_state, strict=False)
             dec_all = len(decoder.state_dict())
             dec_loaded = dec_all - len(dec_msg.missing_keys)
             print(f"  Decoder {i}: Loaded {dec_loaded}/{dec_all} parameters.")
+            
+            # 読み込めなかったキーの名前を表示（原因特定のため）
+            if len(dec_msg.missing_keys) > 0:
+                print(f"    Missing keys in Decoder {i}: {dec_msg.missing_keys}")
     else:
         print("  [ERROR] 'decoder_state_dict' not found in the file.")    
 
