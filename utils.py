@@ -276,10 +276,39 @@ def applying_EFDM(input_features_list, ref_features_list, alpha=0.5):
         aligned_features_list.append(aligned_features)
 
     return aligned_features_list
-    
+    '''
 def load_weights(encoder, decoders, filename):#12/16追加
     #path = os.path.join(WEIGHT_DIR, filename)
     state = torch.load(filename)
     encoder.load_state_dict(state['encoder_state_dict'], strict=False)
     decoders = [decoder.load_state_dict(state, strict=False) for decoder, state in zip(decoders, state['decoder_state_dict'])] #12/16変更
     print('Loading weights from {}'.format(filename))
+    '''
+    
+def load_weights(encoder, decoders, filename):
+    # map_locationを追加してロード時のデバイス不整合を防ぐ
+    state = torch.load(filename, map_location='cpu')
+    
+    print(f'Loading weights from {filename}')
+
+    # --- Encoderのロード ---
+    if 'encoder_state_dict' in state:
+        enc_msg = encoder.load_state_dict(state['encoder_state_dict'], strict=False)
+        
+        # どの程度の重みがロードされたかを確認するためのログ
+        if len(enc_msg.missing_keys) > 0:
+            print(f"  Encoder - Missing keys: {len(enc_msg.missing_keys)} (ignored due to strict=False)")
+        if len(enc_msg.unexpected_keys) > 0:
+            print(f"  Encoder - Unexpected keys: {len(enc_msg.unexpected_keys)} (ignored due to strict=False)")
+    else:
+        print("  Warning: 'encoder_state_dict' not found in checkpoint.")
+
+    # --- Decodersのロード ---
+    # 元のコードのようにリストを再代入せず、ループで各モデルを更新する
+    if 'decoder_state_dict' in state:
+        for i, (decoder, d_state) in enumerate(zip(decoders, state['decoder_state_dict'])):
+            dec_msg = decoder.load_state_dict(d_state, strict=False)
+            # 各デコーダーのロード状況も必要に応じて表示
+            # print(f"  Decoder {i} - Missing: {len(dec_msg.missing_keys)}, Unexpected: {len(dec_msg.unexpected_keys)}")
+    else:
+        print("  Warning: 'decoder_state_dict' not found in checkpoint.")
