@@ -281,5 +281,5 @@ def load_weights(encoder, decoders, filename):#12/16追加
     #path = os.path.join(WEIGHT_DIR, filename)
     state = torch.load(filename)
     encoder.load_state_dict(state['encoder_state_dict'], strict=False)
-    #decoders = [decoder.load_state_dict(state, strict=False) for decoder, state in zip(decoders, state['decoder_state_dict'])] #12/16変更
+    decoders = [decoder.load_state_dict(state, strict=False) for decoder, state in zip(decoders, state['decoder_state_dict'])] #12/16変更
     print('Loading weights from {}'.format(filename))
