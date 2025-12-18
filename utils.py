@@ -284,31 +284,42 @@ def load_weights(encoder, decoders, filename):#12/16追加
     decoders = [decoder.load_state_dict(state, strict=False) for decoder, state in zip(decoders, state['decoder_state_dict'])] #12/16変更
     print('Loading weights from {}'.format(filename))
     '''
-    
 def load_weights(encoder, decoders, filename):
-    # map_locationを追加してロード時のデバイス不整合を防ぐ
+    # デバイス不整合を防ぐため cpu でロードしてから配分
     state = torch.load(filename, map_location='cpu')
-    
     print(f'Loading weights from {filename}')
 
-    # --- Encoderのロード ---
+    # --- Encoder のロード ---
     if 'encoder_state_dict' in state:
         enc_msg = encoder.load_state_dict(state['encoder_state_dict'], strict=False)
         
-        # どの程度の重みがロードされたかを確認するためのログ
-        if len(enc_msg.missing_keys) > 0:
-            print(f"  Encoder - Missing keys: {len(enc_msg.missing_keys)} (ignored due to strict=False)")
-        if len(enc_msg.unexpected_keys) > 0:
-            print(f"  Encoder - Unexpected keys: {len(enc_msg.unexpected_keys)} (ignored due to strict=False)")
+        # 読み込まれたキーの数を計算
+        all_keys = set(encoder.state_dict().keys())
+        loaded_keys = all_keys - set(enc_msg.missing_keys)
+        
+        print(f"--- Encoder Load Report ---")
+        print(f"  Total parameters in model: {len(all_keys)}")
+        print(f"  Successfully loaded: {len(loaded_keys)}")
+        print(f"  Missing (Not loaded): {len(enc_msg.missing_keys)}")
+        
+        # もし一つもロードされていなければ警告
+        if len(loaded_keys) == 0:
+            print("  [WARNING] No weights were loaded into the Encoder! Check key names.")
+        elif len(enc_msg.missing_keys) > 0:
+            # 最初の5つだけ具体例を表示（ログが埋まるのを防ぐため）
+            print(f"  Example of missing keys: {enc_msg.missing_keys[:5]}")
     else:
-        print("  Warning: 'encoder_state_dict' not found in checkpoint.")
+        print("  [ERROR] 'encoder_state_dict' not found in the file.")
 
-    # --- Decodersのロード ---
-    # 元のコードのようにリストを再代入せず、ループで各モデルを更新する
+    # --- Decoders のロード ---
     if 'decoder_state_dict' in state:
+        print(f"--- Decoders Load Report ---")
+        # 元のコードのバグ(decodersリストの上書き)を修正
         for i, (decoder, d_state) in enumerate(zip(decoders, state['decoder_state_dict'])):
             dec_msg = decoder.load_state_dict(d_state, strict=False)
-            # 各デコーダーのロード状況も必要に応じて表示
-            # print(f"  Decoder {i} - Missing: {len(dec_msg.missing_keys)}, Unexpected: {len(dec_msg.unexpected_keys)}")
+            dec_all = len(decoder.state_dict())
+            dec_loaded = dec_all - len(dec_msg.missing_keys)
+            print(f"  Decoder {i}: Loaded {dec_loaded}/{dec_all} parameters.")
     else:
-        print("  Warning: 'decoder_state_dict' not found in checkpoint.")
+        print("  [ERROR] 'decoder_state_dict' not found in the file.")    
+
