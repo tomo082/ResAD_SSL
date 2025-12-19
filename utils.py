@@ -309,12 +309,13 @@ def load_weights(encoder, decoders, filename):
             loaded_keys_count = len(all_keys) - len(missing_keys)
             
             print(f"  Decoder {i}: Loaded {loaded_keys_count}/{len(all_keys)} parameters.")
-                  for key in sorted(list(all_keys)):
-                    print(f"      - {key}")          
+            # 修正箇所: インデントを削除しました
+            for key in sorted(list(all_keys)):
+                print(f"      - {key}")          
+
             if len(missing_keys) > 0:
                 print(f"    [Missing parameters in Decoder {i}]")
                 # 読み込めなかった変数名をすべて書き出す
-                
                 for key in sorted(list(missing_keys)):
                     print(f"      - {key}")
             else:
