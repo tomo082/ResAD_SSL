@@ -327,6 +327,7 @@ if __name__ == "__main__":
     parser.add_argument('--device', type=str, default="cuda:0")
     parser.add_argument('--checkpoint_path', type=str, default="./checkpoints/")
     parser.add_argument('--bgad_weight_dir', type=str, default="none")  # 1/8追加
+    parser.add_argument('--resad_weight_dir', type=str, default="none")  # 1/8追加
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--backbone', type=str, default="wide_resnet50_2")
     
