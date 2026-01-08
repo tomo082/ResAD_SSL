@@ -7,6 +7,7 @@ import torch
 import timm
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+import torch.nn as nn
 
 from train import train
 from validate import validate
@@ -96,6 +97,14 @@ def main(args):
                 out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
         encoder = encoder.to(args.device)
         feat_dims = encoder.feature_info.channels()
+    adapters = nn.ModuleList([
+    nn.Conv2d(in_channels=feat_dim, out_channels=feat_dim, kernel_size=1, stride=1)
+    for feat_dim in feat_dims
+    ]).to(args.device) #追加1/8
+    params_ada = list(adapters[0].parameters()) #追加1/8
+    optimizer_ada = torch.optim.Adam(params_ada, lr=args.lr, weight_decay=0.0005) #追加1/8
+    scheduler_ada = torch.optim.lr_scheduler.MultiStepLR(optimizer_ada, milestones=[70, 90], gamma=0.1) #追加1/8
+
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
     vq_ops = MultiScaleVQ(num_embeddings=args.num_embeddings, channels=feat_dims).to(args.device)
     optimizer_vq = torch.optim.Adam(vq_ops.parameters(), lr=args.lr, weight_decay=0.0005)
@@ -118,6 +127,7 @@ def main(args):
     best_img_auc = 0
     N_batch = 8192
     for epoch in range(args.epochs):
+        adapters.train() #追加1/8
         vq_ops.train()
         constraintor.train()
         for estimator in estimators:
@@ -138,10 +148,18 @@ def main(args):
             
             with torch.no_grad():
                 features = encoder(images)
+                features_ad = encoder(images)#追加1/8
+        
             
             ref_features = get_mc_reference_features(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot)
             mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
+
+            features = [adapters[i](features[i]) for i in range(len(features))] #追加1/8
+            ref_features_ad = get_mc_reference_features(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot)#追加1/8
+            mfeatures_ad = get_mc_matched_ref_features(features_ad, class_names, ref_features_ad)#追加1/8
+            rfeatures_ad = get_residual_features(features_ad, mfeatures_ad, pos_flag=True)#追加1/8
+
             
             lvl_masks = []
             for l in range(args.feature_levels):
@@ -149,7 +167,9 @@ def main(args):
                 m = F.interpolate(masks, size=(h, w), mode='nearest').squeeze(1)
                 lvl_masks.append(m)
             rfeatures_t = [rfeature.detach().clone() for rfeature in rfeatures]
-            
+            rfeatures_ad_t = [rfeature.detach().clone() for rfeature in rfeatures_ad] #追加1/8
+
+
             loss_vq = vq_ops(rfeatures, lvl_masks, train=True)
             train_loss_total += loss_vq.item()
             total_num += 1
@@ -170,10 +190,13 @@ def main(args):
                 
                 loss_i, _, _ = calculate_log_barrier_bi_occ_loss(e, m, t)
                 loss += loss_i
+
+            optimizer_ada.zero_grad() #追加1/8
             optimizer0.zero_grad()
             loss.backward()
             optimizer0.step()
-            
+            optimizer_ada.step() #追加1/8
+
             train_loss_total += loss.item()
             total_num += 1
             
@@ -185,6 +208,7 @@ def main(args):
             total_num += num
         
         scheduler_vq.step()
+        scheduler_ada.step() #追加1/8
         scheduler0.step()
         scheduler1.step()
                
@@ -258,6 +282,7 @@ def main(args):
                 os.makedirs(args.checkpoint_path, exist_ok=True)
                 best_img_auc = img_auc
                 state_dict = {'vq_ops': vq_ops.state_dict(),
+                             'adapter_state_dict': [adapter.state_dict() for adapter in adapters], #追加1/8
                               'constraintor': constraintor.state_dict(),
                               'estimators': [estimator.state_dict() for estimator in estimators]}
                 torch.save(state_dict, os.path.join(args.checkpoint_path, f'{args.setting}_epoch_{epoch}_checkpoints.pth'))
@@ -300,6 +325,7 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--device', type=str, default="cuda:0")
     parser.add_argument('--checkpoint_path', type=str, default="./checkpoints/")
+    parser.add_argument('--bgad_weight_dir', type=str, default="none")  # 1/8追加
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--backbone', type=str, default="wide_resnet50_2")
     
