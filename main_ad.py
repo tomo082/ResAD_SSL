@@ -98,6 +98,7 @@ def main(args):
                 out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
         encoder = encoder.to(args.device)
         feat_dims = encoder.feature_info.channels()
+#feat_fims [40, 72, 200]
     adapters = nn.ModuleList([
     nn.Conv2d(in_channels=feat_dim, out_channels=feat_dim, kernel_size=1, stride=1)
     for feat_dim in feat_dims
