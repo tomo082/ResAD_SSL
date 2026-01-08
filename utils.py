@@ -322,4 +322,12 @@ def load_weights(encoder, decoders, filename):
                 print(f"    All parameters loaded successfully for Decoder {i}.")
     else:
         print("  [ERROR] 'decoder_state_dict' not found.")
+        
+    def load_weights_ada(adapter, filename):
+    #path = os.path.join(WEIGHT_DIR, filename)
+    state = torch.load(filename)
+    #encoder.load_state_dict(state['encoder_state_dict'], strict=False)
+    #decoders = [decoder.load_state_dict(state, strict=False) for decoder, state in zip(decoders, state['decoder_state_dict'])]
+    adapters = [adapters.load_state_dict(state, strict=False) for adapter, state in zip(adapters, state['adapter_state_dict'])]#modified 1/8
+    print('Loading weights from {}'.format(filename))
 
