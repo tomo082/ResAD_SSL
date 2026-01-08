@@ -276,3 +276,50 @@ def applying_EFDM(input_features_list, ref_features_list, alpha=0.5):
         aligned_features_list.append(aligned_features)
 
     return aligned_features_list
+    '''
+def load_weights(encoder, decoders, filename):#12/16追加
+    #path = os.path.join(WEIGHT_DIR, filename)
+    state = torch.load(filename)
+    encoder.load_state_dict(state['encoder_state_dict'], strict=False)
+    decoders = [decoder.load_state_dict(state, strict=False) for decoder, state in zip(decoders, state['decoder_state_dict'])] #12/16変更
+    print('Loading weights from {}'.format(filename))
+    '''
+def load_weights(encoder, decoders, filename):
+    state = torch.load(filename, map_location='cpu')
+    print(f'Loading weights from {filename}')
+
+    # --- Encoder のロード ---
+    if 'encoder_state_dict' in state:
+        enc_msg = encoder.load_state_dict(state['encoder_state_dict'], strict=False)
+        all_keys = len(encoder.state_dict().keys())
+        loaded_keys = all_keys - len(enc_msg.missing_keys)
+        print(f"--- Encoder Load Report ---")
+        print(f"  Successfully loaded: {loaded_keys}/{all_keys}")
+    else:
+        print("  [ERROR] 'encoder_state_dict' not found.")
+
+    # --- Decoders のロード ---
+    if 'decoder_state_dict' in state:
+        print(f"--- Decoders Detailed Report ---")
+        for i, (decoder, d_state) in enumerate(zip(decoders, state['decoder_state_dict'])):
+            dec_msg = decoder.load_state_dict(d_state, strict=False)
+            
+            all_keys = set(decoder.state_dict().keys())
+            missing_keys = set(dec_msg.missing_keys)
+            loaded_keys_count = len(all_keys) - len(missing_keys)
+            
+            print(f"  Decoder {i}: Loaded {loaded_keys_count}/{len(all_keys)} parameters.")
+            # 修正箇所: インデントを削除しました
+            for key in sorted(list(all_keys)):
+                print(f"      - {key}")          
+
+            if len(missing_keys) > 0:
+                print(f"    [Missing parameters in Decoder {i}]")
+                # 読み込めなかった変数名をすべて書き出す
+                for key in sorted(list(missing_keys)):
+                    print(f"      - {key}")
+            else:
+                print(f"    All parameters loaded successfully for Decoder {i}.")
+    else:
+        print("  [ERROR] 'decoder_state_dict' not found.")
+

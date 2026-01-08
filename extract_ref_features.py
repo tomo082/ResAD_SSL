@@ -9,6 +9,7 @@ import timm
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as T
+from models.fc_flow import load_flow_model
 
 from datasets.mvtec import MVTEC
 from datasets.visa import VISA
@@ -18,7 +19,7 @@ from datasets.mpdd import MPDD
 from datasets.mvtec_loco import MVTECLOCO
 from datasets.brats import BRATS
 from models.imagebind import ImageBindModel
-
+from utils import load_weights
 
 class FEWSHOTDATA(Dataset):
     
@@ -113,10 +114,20 @@ def main(args):
     image_size = 224
     device = 'cuda:0'
     root_dir = args.few_shot_dir
-    encoder = timm.create_model("wide_resnet50_2", features_only=True, 
-            out_indices=(1, 2, 3), pretrained=True).eval()
-    encoder.to(device)
+    if args.backbone == 'wide_resnet50_2':
+        encoder = timm.create_model('wide_resnet50_2', features_only=True,
+                out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
+        encoder = encoder.to(device)
+    elif args.backbone == 'tf_efficientnet_b6':#10/26追加
+        encoder = timm.create_model('tf_efficientnet_b6', features_only=True,
+                out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
+        encoder = encoder.to(device)
+    feat_dims = encoder.feature_info.channels()    
+    decoders = [load_flow_model(args, feat_dim) for feat_dim in feat_dims]
+    decoders = [decoder.to(args.device) for decoder in decoders]
     
+    if args.bgadweight_dir:
+        load_weights(encoder, decoders, args.bgadweight_dir)
     if args.dataset in SETTINGS.keys():
         CLASS_NAMES = SETTINGS[args.dataset]
     else:
@@ -143,14 +154,21 @@ def main(args):
         print(layer1_features.shape)
         print(layer2_features.shape)
         print(layer3_features.shape)
-        
-        layer1_features = layer1_features.permute(0, 2, 3, 1).reshape(-1, 256)
-        layer2_features = layer2_features.permute(0, 2, 3, 1).reshape(-1, 512)
-        layer3_features = layer3_features.permute(0, 2, 3, 1).reshape(-1, 1024)
-        
+        #修正10/26
+        layer1_channels = layer1_features.shape[1]
+        layer2_channels = layer2_features.shape[1]
+        layer3_channels = layer3_features.shape[1]
+
+        layer1_features = layer1_features.permute(0, 2, 3, 1).reshape(-1, layer1_channels)
+        layer2_features = layer2_features.permute(0, 2, 3, 1).reshape(-1, layer2_channels)
+        layer3_features = layer3_features.permute(0, 2, 3, 1).reshape(-1, layer3_channels)
+        #修正終わり
         os.makedirs(os.path.join(args.save_dir, class_name), exist_ok=True)
         
+        print(f"Attempting to save layer1.npy for {class_name}...")
         np.save(os.path.join(args.save_dir, class_name, 'layer1.npy'), layer1_features.cpu().numpy())
+        print(f"Successfully saved layer1.npy for {class_name}.")
+        
         np.save(os.path.join(args.save_dir, class_name, 'layer2.npy'), layer2_features.cpu().numpy())
         np.save(os.path.join(args.save_dir, class_name, 'layer3.npy'), layer3_features.cpu().numpy())
         
@@ -224,7 +242,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default="mvtec")
     parser.add_argument('--few_shot_dir', type=str, default="./4shot/mvtec")
+    parser.add_argument('--flow_arch', type=str, default='conditional_flow_model')
+    parser.add_argument('--bgadweight_dir', type=str, default="none")# 12/16追加
     parser.add_argument('--save_dir', type=str, default="./ref_features/w50/mvtec_4shot")
+<<<<<<< HEAD
     parser.add_argument('--mode', type=str, default='main')
     
     args = parser.parse_args()
@@ -232,3 +253,12 @@ if __name__ == '__main__':
         main(args)
     elif args.mode == 'main2':
         main2(args)
+=======
+    parser.add_argument('--backbone', type=str, default="wide_resnet50_2")#10/26追加
+    parser.add_argument('--coupling_layers', type=int, default=10)
+    parser.add_argument('--clamp_alpha', type=float, default=1.9)
+    parser.add_argument('--pos_embed_dim', type=int, default=256)
+    parser.add_argument('--device', type=str, default="cuda:0")
+    args = parser.parse_args()
+    main(args)
+>>>>>>> e7780db2677733306569789ec32baf99f1acd145
