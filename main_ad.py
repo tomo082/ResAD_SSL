@@ -24,6 +24,7 @@ from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
 from models.vq import MultiScaleVQ
 from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features
+from utils import load_weights_ada
 from utils import BoundaryAverager
 from losses.loss import calculate_log_barrier_bi_occ_loss
 from classes import VISA_TO_MVTEC, MVTEC_TO_VISA, MVTEC_TO_BTAD, MVTEC_TO_MVTEC3D
