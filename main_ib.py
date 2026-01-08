@@ -25,6 +25,7 @@ from models.imagebind import ImageBindModel
 from models.modules import MultiScaleOrthogonalProjector
 from models.vq import MultiScaleVQ4
 from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_random_normal_images
+from utils import load_weights_ada
 from utils import BoundaryAverager
 from losses.loss import calculate_log_barrier_bi_occ_loss, calculate_orthogonal_regularizer
 from classes import VISA_TO_MVTEC, MVTEC_TO_VISA, MVTEC_TO_BTAD, MVTEC_TO_MVTEC3D
