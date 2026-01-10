@@ -19,15 +19,7 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
     constraintor.eval()
     for estimator in estimators:  
         estimator.eval()
-        
-    # UMAP可視化のために追加するリスト
-    all_features_to_return = []
-    all_anomaly_types_to_return = []
-    all_gts_to_return = [] # 0/1の画像レベルのラベル    
-    # 可視化のために追加
-    all_images_raw = [] # 生の画像データ
-    all_scores_map = [] # スコアマップ
-
+    
     label_list, gt_mask_list = [], []
     logps1_list = [list() for _ in range(args.feature_levels)]
     logps2_list = [list() for _ in range(args.feature_levels)]
@@ -35,15 +27,8 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
     progress_bar.set_description(f"Evaluating")
     for idx, batch in enumerate(test_loader):
         progress_bar.update(1)
-        # データセットから返される値を修正したMVTEC/MVTECANOクラスの__getitem__を想定
-        # image: 画像テンソル
-        # label: 画像レベルのGTラベル (0:正常, 1:異常)
-        # mask: ピクセルレベルのGTマスク
-        # class_name_batch: (元のコードの_に対応) その画像のクラス名 (str) - バッチ内の全画像で同じはず
-        # anomaly_type_batch: (追加) その画像の異常タイプ名 (str, 例: 'scratch', 'hole', 'good')
-        image, label, mask, class_name_batch, anomaly_type_batch = batch # ここを変更        
-        #image, label, mask, _ = batch    
-        all_images_raw.append(image.cpu().numpy())       
+        
+        image, label, mask, _ = batch    
         gt_mask_list.append(mask.squeeze(1).cpu().numpy().astype(bool))
         label_list.append(label.cpu().numpy().astype(bool).ravel())
         
@@ -66,26 +51,11 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
                     features[i] = features[i].permute(0, 2, 1).reshape(b, c, 16, 16)
                 mfeatures = get_matched_ref_features(features, ref_features)
                 rfeatures = get_residual_features(features, mfeatures)
-
-            if args.residual=='False':
-                rfeatures = features
-            else:
-                rfeatures = rfeatures
             
-            
-             # --- UMAP可視化のために特徴量と異常タイプ名を収集 ---
-            # ここで、UMAPに渡す特徴量を決定します。
-            # 通常、最も深い層（最後の要素）の特徴量をフラットにして使います。
             fdm_features = vq_ops(rfeatures, train=False)
             rfeatures = applying_EFDM(rfeatures, fdm_features, alpha=args.fdm_alpha)
-            rfeatures = constraintor(*rfeatures) 
-            
-            current_features_flat = rfeatures[-1].cpu().numpy().reshape(image.shape[0], -1)
-            all_features_to_return.append(current_features_flat)
-            all_anomaly_types_to_return.extend(anomaly_type_batch) # リストのままextend
-            all_gts_to_return.extend(label.cpu().numpy()) # labelは0/1のGTラベル
-
-            
+            rfeatures = constraintor(*rfeatures)
+        
             for l in range(args.feature_levels):
                 e = rfeatures[l]  # BxCxHxW
                 bs, dim, h, w = e.size()
@@ -122,19 +92,12 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
     
     scores = (scores1 + scores2) / 2
     img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = calculate_metrics(scores, labels, gt_masks, pro=False, only_max_value=True)
-    #visualizerを使えるようにするためにtest_imgsを返す
+    
     metrics = {}
     metrics['scores1'] = [img_auc1, img_ap1, img_f1_score1, pix_auc1, pix_ap1, pix_f1_score1, pix_aupro1]
     metrics['scores2'] = [img_auc2, img_ap2, img_f1_score2, pix_auc2, pix_ap2, pix_f1_score2, pix_aupro2]
     metrics['scores'] = [img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro]
-    # UMAP可視化のために追加した戻り値
-    metrics['features'] = np.concatenate(all_features_to_return, axis=0)
-    metrics['anomaly_types'] = np.array(all_anomaly_types_to_return, dtype=object) # 文字列を含むのでobject型
-    metrics['gts_labels'] = np.array(all_gts_to_return) # 0/1のGTラベル
-    # 可視化のために追加
-    metrics['images_raw'] = np.concatenate(all_images_raw, axis=0)
-    metrics['scores_map'] = scores
-    metrics['gt_masks_raw'] = gt_masks    
+    
     return metrics
 
 
