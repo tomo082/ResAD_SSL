@@ -29,19 +29,10 @@ class Visualizer(object):
             scores (ndarray): shape (N, h, w)
             gt_masks (ndarray): shape (N, 1, h, w)
         """
-        #7/5 エラー修正
-        if args.residual:         
-          vmax = scores.max() * 255.
-          vmin = scores.min() * 255. + 80
-          vmax = vmax - 20
-          norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
-        else:
-          vmax = scores.max() * 255.
-          vmin = scores.min() * 255.
-          if vmin == vmax:
-              vmax +=1e-6
-          norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
-
+        vmax = scores.max() * 255.
+        vmin = scores.min() * 255. + 80
+        vmax = vmax - 20
+        norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
         img_scores = get_image_scores(scores, topk=10)#6.27
         rank = np.argsort(img_scores)
         rank = np.argsort(rank)
