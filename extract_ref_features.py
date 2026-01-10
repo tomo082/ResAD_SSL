@@ -237,7 +237,6 @@ def main2(args):
         np.save(os.path.join(args.save_dir, class_name, 'layer4.npy'), layer4_features.cpu().numpy())
         
         
-        
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default="mvtec")
@@ -245,15 +244,6 @@ if __name__ == '__main__':
     parser.add_argument('--flow_arch', type=str, default='conditional_flow_model')
     parser.add_argument('--bgadweight_dir', type=str, default="none")# 12/16追加
     parser.add_argument('--save_dir', type=str, default="./ref_features/w50/mvtec_4shot")
-<<<<<<< HEAD
-    parser.add_argument('--mode', type=str, default='main')
-    
-    args = parser.parse_args()
-    if args.mode == 'main':
-        main(args)
-    elif args.mode == 'main2':
-        main2(args)
-=======
     parser.add_argument('--backbone', type=str, default="wide_resnet50_2")#10/26追加
     parser.add_argument('--coupling_layers', type=int, default=10)
     parser.add_argument('--clamp_alpha', type=float, default=1.9)
@@ -261,4 +251,3 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default="cuda:0")
     args = parser.parse_args()
     main(args)
->>>>>>> e7780db2677733306569789ec32baf99f1acd145
