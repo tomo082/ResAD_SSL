@@ -54,7 +54,37 @@ def get_matched_ref_features(features: List[Tensor], ref_features: List[Tensor])
         matched_ref_features.append(index_feats)
     
     return matched_ref_features
+def get_matched_ref_features_top(features: List[Tensor], ref_features: List[Tensor], rank: int = 0) -> List[Tensor]:
+    """
+    Get matched reference features for one class.
+    Args:
+        rank (int): 取得する類似度の順位。0で最も似ているもの、1で2番目...を指定。
+    """
+    matched_ref_features = []
+    for layer_id in range(len(features)):
+        feature = features[layer_id]
+        B, C, H, W = feature.shape
+        feature = feature.permute(0, 2, 3, 1).reshape(-1, C).contiguous()  # (N1, C)
+        feature_n = F.normalize(feature, p=2, dim=1)
+        coreset = ref_features[layer_id]  # (N2, C)
+        coreset_n = F.normalize(coreset, p=2, dim=1)
+        dist = feature_n @ coreset_n.T
 
+        # --- 変更箇所: rankに応じてインデックスを取得 ---
+        if rank == 0:
+            cidx = torch.argmax(dist, dim=1)
+        else:
+            # 上位 (rank + 1) 個を取得し、その最後の要素（指定された順位のもの）を取得
+            # kがメモリバンクサイズを超えないように注意が必要ですが、通常は十分大きいためこのまま実装します
+            _, topk_indices = torch.topk(dist, k=rank + 1, dim=1)
+            cidx = topk_indices[:, -1]
+        # ----------------------------------------------
+
+        index_feats = coreset[cidx]
+        index_feats = index_feats.reshape(B, H, W, C).permute(0, 3, 1, 2)
+        matched_ref_features.append(index_feats)
+    
+    return matched_ref_features
 
 def get_residual_features(features: List[Tensor], ref_features: List[Tensor], pos_flag: bool = False) -> List[Tensor]:
     residual_features = []
