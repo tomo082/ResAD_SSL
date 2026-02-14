@@ -44,7 +44,7 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
                 rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             elif args.backbone == 'tf_efficientnet_b6':#10/26追加
                 features = encoder(image)
-                mfeatures = get_matched_ref_features(features, ref_features)
+                mfeatures = get_matched_ref_features_top(features, ref_features,args.rank)
                 rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             else:
                 features = encoder.encode_image_from_tensors(image)
