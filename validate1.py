@@ -30,7 +30,7 @@ def validate1(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_
     for idx, batch in enumerate(test_loader):
         progress_bar.update(1)
         
-        image, label, mask, _ = batch    
+        image, label, mask= batch[:3]
         gt_mask_list.append(mask.squeeze(1).cpu().numpy().astype(bool))
         label_list.append(label.cpu().numpy().astype(bool).ravel())
         
