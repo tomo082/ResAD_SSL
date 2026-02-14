@@ -302,6 +302,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_path', type=str, default="./checkpoints/")
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--backbone', type=str, default="wide_resnet50_2")
+    parser.add_argument('--rank', type=int, default="0")    
     
     # flow parameters
     parser.add_argument('--flow_arch', type=str, default='conditional_flow_model')
