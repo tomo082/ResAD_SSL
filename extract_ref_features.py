@@ -242,7 +242,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default="mvtec")
     parser.add_argument('--few_shot_dir', type=str, default="./4shot/mvtec")
     parser.add_argument('--flow_arch', type=str, default='conditional_flow_model')
-    parser.add_argument('--bgadweight_dir', type=str, default="none")# 12/16追加
+    parser.add_argument('--bgadweight_dir', type=str, default="")# 12/16追加
     parser.add_argument('--save_dir', type=str, default="./ref_features/w50/mvtec_4shot")
     parser.add_argument('--backbone', type=str, default="wide_resnet50_2")#10/26追加
     parser.add_argument('--coupling_layers', type=int, default=10)
