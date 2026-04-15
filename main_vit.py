@@ -31,7 +31,34 @@ from classes import MVTEC_TO_MVTEC, VISA_TO_VISA
 from classes import CAPSULES_TO_CAPSULES
 
 warnings.filterwarnings('ignore')
+# --- import文の下、定数定義(TOTAL_SHOTなど)の上あたりに追加 ---
+class ViTFeatureExtractor(nn.Module):
+    def __init__(self, model_name='vit_base_patch14_224', out_indices=(3, 7, 11)):
+        super().__init__()
+        self.vit = timm.create_model(model_name, pretrained=True)
+        self.out_indices = out_indices
+        self.patch_size = self.vit.patch_embed.patch_size[0]
+        self.embed_dim = self.vit.embed_dim
 
+    def forward(self, x):
+        B, C, H, W = x.shape
+        h_out, w_out = H // self.patch_size, W // self.patch_size
+
+        x = self.vit.patch_embed(x)
+        x = self.vit._pos_embed(x)
+        x = self.vit.norm_pre(x)
+
+        features = []
+        for i, blk in enumerate(self.vit.blocks):
+            x = blk(x)
+            if i in self.out_indices:
+                num_prefix_tokens = self.vit.num_prefix_tokens
+                tokens = x[:, num_prefix_tokens:]
+                feat = tokens.transpose(1, 2).reshape(B, self.embed_dim, h_out, w_out)
+                features.append(feat)
+
+        return features
+# -------------------------------------------------------------
 TOTAL_SHOT = 4  # total few-shot reference samples
 FIRST_STAGE_EPOCH = 10
 SETTINGS = {'visa_to_mvtec': VISA_TO_MVTEC, 'mvtec_to_visa': MVTEC_TO_VISA,
