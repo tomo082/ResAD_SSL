@@ -123,6 +123,11 @@ def main(args):
                 out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
         encoder = encoder.to(args.device)
         feat_dims = encoder.feature_info.channels()
+    elif args.backbone == 'vit_base_patch14':#4/15追加
+        encoder = ViTFeatureExtractor(model_name='vit_base_patch14_224', out_indices=(3, 7, 11)).eval()
+        encoder = encoder.to(args.device)
+        feat_dims = [encoder.embed_dim] * len(encoder.out_indices)
+        
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
     vq_ops = MultiScaleVQ(num_embeddings=args.num_embeddings, channels=feat_dims).to(args.device)
     optimizer_vq = torch.optim.Adam(vq_ops.parameters(), lr=args.lr, weight_decay=0.0005)
