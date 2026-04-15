@@ -22,7 +22,7 @@ from models.imagebind import ImageBindModel
 from utils import load_weights
 
 class ViTFeatureExtractor(nn.Module):
-    def __init__(self, model_name='vit_base_patch14_224', out_indices=(3, 7, 11)):
+    def __init__(self, model_name="deit_base_patch16_224", out_indices=(3, 7, 11)):
         super().__init__()
         self.vit = timm.create_model(model_name, pretrained=True)
         self.out_indices = out_indices
