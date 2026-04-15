@@ -3,10 +3,12 @@ from typing import Sequence
 import torch
 import torch.nn as nn
 from timm.models.resnet import BasicBlock, create_aa, Bottleneck
-from timm.models.layers import create_attn
+#from timm.models.layers import create_attn
+from timm.layers import create_attn
 #from timm.models.layers.create_act import create_act_layer
 from timm.layers import create_act_layer
-from timm.models.layers.helpers import make_divisible
+#from timm.models.layers.helpers import make_divisible
+from timm.layers import make_divisible
 from einops import rearrange
 
 
