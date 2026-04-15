@@ -29,6 +29,7 @@ from classes import VISA_TO_MVTEC, MVTEC_TO_VISA, MVTEC_TO_BTAD, MVTEC_TO_MVTEC3
 from classes import MVTEC_TO_MPDD, MVTEC_TO_MVTECLOCO, MVTEC_TO_BRATS
 from classes import MVTEC_TO_MVTEC, VISA_TO_VISA
 from classes import CAPSULES_TO_CAPSULES
+import torch.nn as nn
 
 warnings.filterwarnings('ignore')
 # --- import文の下、定数定義(TOTAL_SHOTなど)の上あたりに追加 ---
