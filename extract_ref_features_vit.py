@@ -21,8 +21,34 @@ from datasets.brats import BRATS
 from models.imagebind import ImageBindModel
 from utils import load_weights
 
+class ViTFeatureExtractor(nn.Module):
+    def __init__(self, model_name='vit_base_patch14_224', out_indices=(3, 7, 11)):
+        super().__init__()
+        self.vit = timm.create_model(model_name, pretrained=True)
+        self.out_indices = out_indices
+        self.patch_size = self.vit.patch_embed.patch_size[0]
+        self.embed_dim = self.vit.embed_dim
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        h_out, w_out = H // self.patch_size, W // self.patch_size
+
+        x = self.vit.patch_embed(x)
+        x = self.vit._pos_embed(x)
+        x = self.vit.norm_pre(x)
+
+        features = []
+        for i, blk in enumerate(self.vit.blocks):
+            x = blk(x)
+            if i in self.out_indices:
+                num_prefix_tokens = self.vit.num_prefix_tokens
+                tokens = x[:, num_prefix_tokens:]
+                feat = tokens.transpose(1, 2).reshape(B, self.embed_dim, h_out, w_out)
+                features.append(feat)
+
+        return features
 class FEWSHOTDATA(Dataset):
-    
+
     def __init__(self, 
                  root: str,
                  class_name: str = 'bottle', 
@@ -122,6 +148,10 @@ def main(args):
         encoder = timm.create_model('tf_efficientnet_b6', features_only=True,
                 out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
         encoder = encoder.to(device)
+    elif args.backbone == 'vit_base_patch14':
+        encoder = ViTFeatureExtractor(model_name='vit_base_patch14_224', out_indices=(3, 7, 11)).eval()
+        encoder = encoder.to(device)
+        feat_dims = [encoder.embed_dim] * len(encoder.out_indices)
     feat_dims = encoder.feature_info.channels()    
     decoders = [load_flow_model(args, feat_dim) for feat_dim in feat_dims]
     decoders = [decoder.to(args.device) for decoder in decoders]
