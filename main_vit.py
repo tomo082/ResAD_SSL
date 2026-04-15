@@ -125,7 +125,7 @@ def main(args):
         encoder = encoder.to(args.device)
         feat_dims = encoder.feature_info.channels()
     elif args.backbone == 'vit_base_patch14':#4/15追加
-        encoder = ViTFeatureExtractor(model_name='vit_base_patch14_224', out_indices=(3, 7, 11)).eval()
+        encoder = ViTFeatureExtractor(model_name='vit_base_patch14_reg4_dinov2.lvd142m', out_indices=(3, 7, 11)).eval()
         encoder = encoder.to(args.device)
         feat_dims = [encoder.embed_dim] * len(encoder.out_indices)
         
