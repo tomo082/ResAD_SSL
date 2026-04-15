@@ -24,7 +24,7 @@ from utils import load_weights
 class ViTFeatureExtractor(nn.Module):
     def __init__(self, model_name="deit_base_patch16_224", out_indices=(3, 7, 11)):
         super().__init__()
-        self.vit = timm.create_model(model_name, pretrained=True)
+        self.vit = timm.create_model(model_name, pretrained=True,dynamic_img_size=True)
         self.out_indices = out_indices
         self.patch_size = self.vit.patch_embed.patch_size[0]
         self.embed_dim = self.vit.embed_dim
