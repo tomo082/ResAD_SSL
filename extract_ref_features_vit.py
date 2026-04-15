@@ -148,8 +148,8 @@ def main(args):
         encoder = timm.create_model('tf_efficientnet_b6', features_only=True,
                 out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
         encoder = encoder.to(device)
-    elif args.backbone == 'deit_base_patch16_224':
-        encoder = ViTFeatureExtractor(model_name='vit_base_patch14_224', out_indices=(3, 7, 11)).eval()
+    elif args.backbone == 'vit_base_patch14':
+        encoder = ViTFeatureExtractor(model_name='vit_base_patch14_reg4_dinov2.lvd142m', out_indices=(3, 7, 11)).eval()
         encoder = encoder.to(device)
         feat_dims = [encoder.embed_dim] * len(encoder.out_indices)
     feat_dims = encoder.feature_info.channels()    
