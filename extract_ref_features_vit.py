@@ -144,15 +144,16 @@ def main(args):
         encoder = timm.create_model('wide_resnet50_2', features_only=True,
                 out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
         encoder = encoder.to(device)
+        feat_dims = encoder.feature_info.channels()   
     elif args.backbone == 'tf_efficientnet_b6':#10/26追加
         encoder = timm.create_model('tf_efficientnet_b6', features_only=True,
                 out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
         encoder = encoder.to(device)
+        feat_dims = encoder.feature_info.channels()   
     elif args.backbone == 'vit_base_patch14':
         encoder = ViTFeatureExtractor(model_name='vit_base_patch14_reg4_dinov2.lvd142m', out_indices=(3, 7, 11)).eval()
         encoder = encoder.to(device)
-        feat_dims = [encoder.embed_dim] * len(encoder.out_indices)
-    feat_dims = encoder.feature_info.channels()    
+        feat_dims = [encoder.embed_dim] * len(encoder.out_indices) 
     decoders = [load_flow_model(args, feat_dim) for feat_dim in feat_dims]
     decoders = [decoder.to(args.device) for decoder in decoders]
     
