@@ -161,7 +161,8 @@ def main(args):
         progress_bar.set_description(f"Epoch[{epoch}/{args.epochs}]")
         for step, batch in enumerate(train_loader):
             progress_bar.update(1)
-            images, _, masks, class_names = batch
+            #images, _, masks, class_names = batch
+            images, _, masks, class_names = batch[0], batch[1], batch[2], batch[3]
             
             images = images.to(args.device)
             masks = masks.to(args.device)
