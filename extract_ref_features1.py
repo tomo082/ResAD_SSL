@@ -21,7 +21,36 @@ from datasets.mvtec_loco import MVTECLOCO
 from datasets.brats import BRATS
 from models.imagebind import ImageBindModel
 from utils import load_weights
+import torch.nn.functional as F
 
+class WideResNetFeatureExtractor(nn.Module):
+    def __init__(self, model_name='wide_resnet50_2', out_indices=(1, 2, 3)):
+        super().__init__()
+        # 元のモデルを読み込み
+        self.encoder = timm.create_model(model_name, features_only=True, out_indices=out_indices, pretrained=True)
+        self.embed_dims = self.encoder.feature_info.channels()
+        
+        # 重みを持たない平滑化レイヤー
+        self.layer1_pool = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)  # 浅い層用
+        self.layer3_pool = nn.AvgPool2d(kernel_size=5, stride=1, padding=2)  # 深い層用（より広範囲をぼかす）
+
+    def forward(self, x):
+        features = self.encoder(x)
+        processed_features = []
+        
+        for i, feat in enumerate(features):
+            if i == 0:
+                # 浅い層: 局所的な細かい変動ノイズを吸収
+                feat = self.layer1_pool(feat)
+            elif i == 2:
+                # 深い層: 意味的な情報を少し広げてマッチングを安定させる
+                feat = self.layer3_pool(feat)
+            
+            # 全層共通: ベクトルのスケールを統一し、次元が大きくても距離計算を安定させる
+            feat = F.normalize(feat, p=2, dim=1)
+            processed_features.append(feat)
+            
+        return processed_features
 class FEWSHOTDATA(Dataset):
     
     def __init__(self, 
