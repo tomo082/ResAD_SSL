@@ -117,10 +117,10 @@ def main(args):
             train_dataset2, batch_size=args.batch_size, shuffle=True, num_workers=8, drop_last=True
         )
     if args.backbone == 'wide_resnet50_2':
-        encoder = timm.create_model('wide_resnet50_2', features_only=True,
-                out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
+
+        encoder = WideResNetFeatureExtractor(model_name='wide_resnet50_2', out_indices=(1, 2, 3)).eval()
         encoder = encoder.to(args.device)
-        feat_dims = encoder.feature_info.channels()
+        feat_dims = encoder.embed_dims
     elif args.backbone == 'tf_efficientnet_b6':#10/26追加
         encoder = timm.create_model('tf_efficientnet_b6', features_only=True,
                 out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
