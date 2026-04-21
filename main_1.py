@@ -8,7 +8,7 @@ import torch
 import timm
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-
+import torch.nn as nn
 from train import train
 from validate import validate
 from datasets.mvtec import MVTEC, MVTECANO
