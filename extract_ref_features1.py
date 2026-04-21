@@ -145,14 +145,14 @@ def main(args):
     device = 'cuda:0'
     root_dir = args.few_shot_dir
     if args.backbone == 'wide_resnet50_2':
-        encoder = timm.create_model('wide_resnet50_2', features_only=True,
-                out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
+        encoder = WideResNetFeatureExtractor(model_name='wide_resnet50_2', out_indices=(1, 2, 3)).eval()
         encoder = encoder.to(device)
+        feat_dims = encoder.embed_dims
     elif args.backbone == 'tf_efficientnet_b6':#10/26追加
         encoder = timm.create_model('tf_efficientnet_b6', features_only=True,
                 out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
         encoder = encoder.to(device)
-    feat_dims = encoder.feature_info.channels()    
+    #feat_dims = encoder.feature_info.channels()    
     decoders = [load_flow_model(args, feat_dim) for feat_dim in feat_dims]
     decoders = [decoder.to(args.device) for decoder in decoders]
     
