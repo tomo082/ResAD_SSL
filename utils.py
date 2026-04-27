@@ -129,9 +129,6 @@ def get_fourier_residual_features(features, mfeatures, pos_flag=True):
         # 5. 逆フーリエ変換 (IFFT) で空間領域の残差マップに戻す
         res_f = torch.fft.ifft2(res_fft_new, norm="ortho").real
         
-        # 元の実装に合わせ、元の特徴量と残差を結合 (オプション)
-        if pos_flag:
-            res_f = torch.cat([f, res_f], dim=1)
             
         rfeatures.append(res_f)
         
