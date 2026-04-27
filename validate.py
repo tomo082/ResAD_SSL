@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from models.modules import get_position_encoding
 from models.utils import get_logp
-from utils import get_residual_features, get_matched_ref_features
+from utils import get_residual_features, get_matched_ref_features,get_fourier_residual_features
 from utils import calculate_metrics, applying_EFDM
 from losses.utils import get_logp_a
 
