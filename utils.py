@@ -99,7 +99,43 @@ def get_residual_features(features: List[Tensor], ref_features: List[Tensor], po
         residual_features.append(ri)
     
     return residual_features
+import torch
+
+def get_fourier_residual_features(features, mfeatures, pos_flag=True):
+    """
+    周波数領域で残差を計算する関数
+    features: テスト画像の特徴量リスト [B, C, H, W]
+    mfeatures: マッチングされた参照画像の特徴量リスト [B, C, H, W]
+    """
+    rfeatures = []
+    for i in range(len(features)):
+        f, mf = features[i], mfeatures[i]
         
+        # 1. 2D FFTで空間から周波数領域へ変換
+        f_fft = torch.fft.fft2(f, norm="ortho")
+        mf_fft = torch.fft.fft2(mf, norm="ortho")
+        
+        # 2. 振幅 (Amplitude) と 位相 (Phase) に分離
+        f_amp, f_pha = torch.abs(f_fft), torch.angle(f_fft)
+        mf_amp, mf_pha = torch.abs(mf_fft), torch.angle(mf_fft)
+        
+        # 3. 振幅の残差を計算 (ここがキズに反応する)
+        # 位相の残差は空間構造の歪みを表すが、位置ズレに寛容にするためテスト画像の位相を保持する
+        res_amp = torch.abs(f_amp - mf_amp)
+        
+        # 4. 残差振幅とテスト画像の位相を結合して複素数に戻す
+        res_fft_new = res_amp * torch.exp(1j * f_pha)
+        
+        # 5. 逆フーリエ変換 (IFFT) で空間領域の残差マップに戻す
+        res_f = torch.fft.ifft2(res_fft_new, norm="ortho").real
+        
+        # 元の実装に合わせ、元の特徴量と残差を結合 (オプション)
+        if pos_flag:
+            res_f = torch.cat([f, res_f], dim=1)
+            
+        rfeatures.append(res_f)
+        
+    return rfeatures        
 
 def load_reference_features(root_dir: str, class_name: str, device: torch.device) -> List[Tensor]:
     """
