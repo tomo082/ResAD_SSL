@@ -109,10 +109,10 @@ def get_image_level_matched_features(features, ref_features):
         
         coreset = ref_features[layer_id]
         K = coreset.shape[0] // (H * W)
-        coreset_spatial = coreset.view(K, H, W, C).permute(0, 3, 1, 2)
+        coreset_spatial = coreset.view(K, H, W, C).permute(0, 3, 1, 2).contiguous()
         
-        feat_flat = feature.view(B, 1, -1)
-        core_flat = coreset_spatial.view(1, K, -1)
+        feat_flat = feature.reshape(B, 1, -1)
+        core_flat = coreset_spatial.reshape(1, K, -1)
         
         feat_norm = F.normalize(feat_flat, p=2, dim=2)
         core_norm = F.normalize(core_flat, p=2, dim=2)
@@ -135,10 +135,10 @@ def get_mc_image_level_matched_features(features, class_names, ref_features):
             
             coreset = ref_features_c[layer_id]
             K = coreset.shape[0] // (H * W)
-            coreset_spatial = coreset.view(K, H, W, C).permute(0, 3, 1, 2)
+            coreset_spatial = coreset.view(K, H, W, C).permute(0, 3, 1, 2).contiguous()
             
-            feat_flat = feature.view(1, 1, -1)
-            core_flat = coreset_spatial.view(1, K, -1)
+            feat_flat = feature.reshape(1, 1, -1)
+            core_flat = coreset_spatial.reshape(1, K, -1)
             
             feat_norm = F.normalize(feat_flat, p=2, dim=2)
             core_norm = F.normalize(core_flat, p=2, dim=2)
