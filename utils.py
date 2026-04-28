@@ -440,4 +440,62 @@ def load_weights_ada(adapter, filename):
     #decoders = [decoder.load_state_dict(state, strict=False) for decoder, state in zip(decoders, state['decoder_state_dict'])]
     adapters = [adapters.load_state_dict(state, strict=False) for adapter, state in zip(adapters, state['adapter_state_dict'])]#modified 1/8
     print('Loading weights from {}'.format(filename))
+def get_soft_matched_features(features: List[Tensor], ref_features: List[Tensor], tau=0.05) -> List[Tensor]:
+    """
+    評価用: Soft Attentionを用いた滑らかな特徴マッチング
+    tau (Temperature): 値が小さいほどArgmaxに近づき（鮮明）、大きいほど平均に近づく（滑らか）
+    """
+    matched_ref_features = []
+    for layer_id in range(len(features)):
+        feature = features[layer_id]
+        B, C, H, W = feature.shape
 
+        # [B*H*W, C] に変形
+        feature_flat = feature.permute(0, 2, 3, 1).reshape(-1, C).contiguous()
+        feature_n = F.normalize(feature_flat, p=2, dim=1)
+
+        coreset = ref_features[layer_id]  # [K*H*W, C] (Kはショット数)
+        coreset_n = F.normalize(coreset, p=2, dim=1)
+
+        # 1. すべての参照ピクセルとの類似度を計算
+        sim = feature_n @ coreset_n.T  # [B*H*W, K*H*W]
+
+        # 2. Temperature付きSoftmaxで重み（Attention）を計算
+        attn = F.softmax(sim / tau, dim=1)  # [B*H*W, K*H*W]
+
+        # 3. 参照ピクセルを重み付きでブレンド
+        index_feats = attn @ coreset  # [B*H*W, C]
+
+        # 4. 元の画像形状に戻す
+        index_feats = index_feats.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous()
+        matched_ref_features.append(index_feats)
+    
+    return matched_ref_features
+
+def get_mc_soft_matched_features(features: List[Tensor], class_names: List[str], ref_features: Dict[str, List[Tensor]], tau=0.05) -> List[Tensor]:
+    """
+    学習用: マルチクラス対応のSoft Attentionマッチング
+    """
+    matched_ref_features = [[] for _ in range(len(features))]
+    for idx, c in enumerate(class_names):  
+        ref_features_c = ref_features[c]
+        
+        for layer_id in range(len(features)):  
+            feature = features[layer_id][idx:idx+1]
+            _, C, H, W = feature.shape
+            
+            feature_flat = feature.permute(0, 2, 3, 1).reshape(-1, C).contiguous()
+            feature_n = F.normalize(feature_flat, p=2, dim=1)
+            
+            coreset = ref_features_c[layer_id]
+            coreset_n = F.normalize(coreset, p=2, dim=1)
+            
+            sim = feature_n @ coreset_n.T 
+            attn = F.softmax(sim / tau, dim=1) 
+            
+            index_feats = attn @ coreset 
+            index_feats = index_feats.reshape(1, H, W, C).permute(0, 3, 1, 2).contiguous()
+            matched_ref_features[layer_id].append(index_feats)
+            
+    matched_ref_features = [torch.cat(item, dim=0) for item in matched_ref_features]
+    return matched_ref_features
