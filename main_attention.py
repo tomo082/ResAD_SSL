@@ -140,7 +140,7 @@ def main(args):
                 features = encoder(images)
             
             ref_features = get_mc_reference_features(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot)
-            mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
+            mfeatures = get_mc_soft_matched_features(features, class_names, ref_features)
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             
             lvl_masks = []
