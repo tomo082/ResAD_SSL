@@ -128,7 +128,9 @@ def get_fourier_residual_features(features, mfeatures, pos_flag=True):
         
         # 5. 逆フーリエ変換 (IFFT) で空間領域の残差マップに戻す
         res_f = torch.fft.ifft2(res_fft_new, norm="ortho").real
-        
+        #元のMSEに合わせるために2乗する
+        if pos_flag:
+            res_f = torch.pow(res_f, 2) # または torch.abs(res_f)      
             
         rfeatures.append(res_f)
         
