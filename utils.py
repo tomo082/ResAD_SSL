@@ -101,6 +101,55 @@ def get_residual_features(features: List[Tensor], ref_features: List[Tensor], po
     return residual_features
 import torch
 
+def get_image_level_matched_features(features, ref_features):
+    matched_ref_features = []
+    for layer_id in range(len(features)):
+        feature = features[layer_id]
+        B, C, H, W = feature.shape
+        
+        coreset = ref_features[layer_id]
+        K = coreset.shape[0] // (H * W)
+        coreset_spatial = coreset.view(K, H, W, C).permute(0, 3, 1, 2)
+        
+        feat_flat = feature.view(B, 1, -1)
+        core_flat = coreset_spatial.view(1, K, -1)
+        
+        feat_norm = F.normalize(feat_flat, p=2, dim=2)
+        core_norm = F.normalize(core_flat, p=2, dim=2)
+        sim = torch.sum(feat_norm * core_norm, dim=2)
+        
+        best_idx = torch.argmax(sim, dim=1)
+        matched = coreset_spatial[best_idx]
+        matched_ref_features.append(matched)
+        
+    return matched_ref_features
+
+def get_mc_image_level_matched_features(features, class_names, ref_features):
+    matched_ref_features = [[] for _ in range(len(features))]
+    for idx, c in enumerate(class_names):
+        ref_features_c = ref_features[c]
+        
+        for layer_id in range(len(features)):
+            feature = features[layer_id][idx:idx+1]
+            _, C, H, W = feature.shape
+            
+            coreset = ref_features_c[layer_id]
+            K = coreset.shape[0] // (H * W)
+            coreset_spatial = coreset.view(K, H, W, C).permute(0, 3, 1, 2)
+            
+            feat_flat = feature.view(1, 1, -1)
+            core_flat = coreset_spatial.view(1, K, -1)
+            
+            feat_norm = F.normalize(feat_flat, p=2, dim=2)
+            core_norm = F.normalize(core_flat, p=2, dim=2)
+            sim = torch.sum(feat_norm * core_norm, dim=2)
+            
+            best_idx = torch.argmax(sim, dim=1)
+            matched = coreset_spatial[best_idx].squeeze(0)
+            matched_ref_features[layer_id].append(matched)
+            
+    matched_ref_features = [torch.stack(item, dim=0) for item in matched_ref_features]
+    return matched_ref_features
 def get_fourier_residual_features(features, mfeatures, pos_flag=True):
     """
     周波数領域で残差を計算する関数
