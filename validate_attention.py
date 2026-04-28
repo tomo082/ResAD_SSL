@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from models.modules import get_position_encoding
 from models.utils import get_logp
 from utils import get_residual_features, get_matched_ref_features,get_fourier_residual_features
+from utils import get_residual_features, get_soft_matched_features
 from utils import calculate_metrics, applying_EFDM
 from losses.utils import get_logp_a
 
@@ -38,15 +39,15 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
         with torch.no_grad():
             if args.backbone == 'wide_resnet50_2':
                 features = encoder(image)
-                mfeatures = get_matched_ref_features(features, ref_features)
+                mfeatures = get_soft_matched_features(features, ref_features)
                 rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             elif args.backbone == 'tf_efficientnet_b6':#10/26追加
                 features = encoder(image)
-                mfeatures = get_matched_ref_features(features, ref_features)
+                mfeatures = get_soft_matched_features(features, ref_features)
                 rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             elif args.backbone == 'vit_base_patch14':
                 features = encoder(image)
-                mfeatures = get_matched_ref_features(features, ref_features)
+                mfeatures = get_soft_matched_features(features, ref_features)
                 rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             else:
                 features = encoder.encode_image_from_tensors(image)
