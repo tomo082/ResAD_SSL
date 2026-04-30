@@ -160,9 +160,10 @@ def main(args):
             images, _, _, _ = batch
             with torch.no_grad():
                 patch_tokens = encoder(images.to(device))
-            layer1_features.append(patch_tokens[0])
-            layer2_features.append(patch_tokens[1])
-            layer3_features.append(patch_tokens[2]) 
+                filtered_tokens = apply_laplacian_filter(patch_tokens)
+            layer1_features.append(filtered_tokens[0])
+            layer2_features.append(filtered_tokens[1])
+            layer3_features.append(filtered_tokens[2]) 
         layer1_features = torch.cat(layer1_features, dim=0)
         layer2_features = torch.cat(layer2_features, dim=0)
         layer3_features = torch.cat(layer3_features, dim=0)
