@@ -10,7 +10,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 import torchvision.transforms as T
 from models.fc_flow import load_flow_model
-
+import torch.nn.functional as F
 from datasets.mvtec import MVTEC
 from datasets.visa import VISA
 from datasets.btad import BTAD
@@ -21,6 +21,21 @@ from datasets.brats import BRATS
 from models.imagebind import ImageBindModel
 from utils import load_weights
 
+def apply_laplacian_filter(feature_maps):
+    filtered_maps = []
+    # ラプラシアンカーネル (中心が4、周辺が-1)
+    kernel = torch.tensor([[0., -1., 0.],
+                           [-1.,  4., -1.],
+                           [0., -1.,  0.]]).view(1, 1, 3, 3)
+
+    for f_map in feature_maps:
+        # f_map shape: [B, C, H, W]
+        B, C, H, W = f_map.shape
+        weight = kernel.expand(C, 1, 3, 3).to(f_map.device)
+        filtered = F.conv2d(f_map, weight, padding=1, groups=C)
+        filtered_maps.append(filtered)
+    
+    return filtered_maps
 class FEWSHOTDATA(Dataset):
     
     def __init__(self, 
