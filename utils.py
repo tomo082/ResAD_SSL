@@ -289,6 +289,20 @@ def calculate_metrics(scores, labels, gt_masks, pro=True, only_max_value=True):
         labels (np.ndarray): shape (N, ), 0 for normal, 1 for abnormal.
         gt_masks (np.ndarray): shape (N, H, W).
     """
+    #scaling
+    if False:
+        global_scaler = StandardScaler()
+        global_scaler.fit(scores.flatten())
+        new_scores = []
+        for _, s in zip(gt_masks, scores):
+            local_scaler.fit(s.flatten())
+            local_scaler.sd = global_scaler.sd
+            local_scaler.transform(s.flatten())
+            local_scaler.scale_ = global_scaler.scale_
+            local_scaler.var_ = global_scaler.var_
+            new_scores.append(local_scaler.transform(s))
+        scores = np.array(new_scores)
+
     # average precision
     pix_ap = round(average_precision_score(gt_masks.flatten(), scores.flatten()), 5)
     # f1 score, f1 score is to balance the precision and recall
