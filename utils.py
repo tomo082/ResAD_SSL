@@ -291,6 +291,7 @@ def calculate_metrics(scores, labels, gt_masks, pro=True, only_max_value=True):
     """
     #scaling
     if False:
+        local_scaler = StandardScaler()
         global_scaler = StandardScaler()
         global_scaler.fit(np.maximum(scores.flatten(),0))
         new_scores = []
