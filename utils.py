@@ -293,13 +293,13 @@ def calculate_metrics(scores, labels, gt_masks, pro=True, only_max_value=True):
     if False:
         local_scaler = StandardScaler()
         global_scaler = StandardScaler()
-        global_scaler.fit(np.maximum(scores.reshape(-1),0))
+        global_scaler.fit(np.maximum(scores.reshape(-1,1),0))
         new_scores = []
         for _, s in zip(gt_masks, scores):
-            local_scaler.fit(np.maximum(s.reshape(-1),0))
-            local_scaler.scale_ = global_scaler.scale_
-            local_scaler.var_ = global_scaler.var_
-            new_scores.append(local_scaler.transform(s))
+            local_scaler.fit(np.maximum(s.reshape(-1,1),0))
+            local_scaler.scale_ = global_scaler.mean_
+            #local_scaler.var_ = global_scaler.var_
+            new_scores.append(local_scaler.transform(s.reshape(-1,1)).reshape(H,W))
         scores = np.array(new_scores)
 
     # average precision
