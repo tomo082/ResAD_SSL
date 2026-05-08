@@ -289,18 +289,18 @@ def calculate_metrics(scores, labels, gt_masks, pro=True, only_max_value=True):
         labels (np.ndarray): shape (N, ), 0 for normal, 1 for abnormal.
         gt_masks (np.ndarray): shape (N, H, W).
     """
-    #scaling
-    if False:
-        local_scaler = StandardScaler()
-        global_scaler = StandardScaler()
-        global_scaler.fit(np.maximum(scores.reshape(-1,1),0))
-        new_scores = []
-        for _, s in zip(gt_masks, scores):
-            local_scaler.fit(np.maximum(s.reshape(-1,1),0))
-            local_scaler.scale_ = global_scaler.mean_
-            #local_scaler.var_ = global_scaler.var_
-            new_scores.append(local_scaler.transform(s.reshape(-1,1)).reshape(H,W))
-        scores = np.array(new_scores)
+    #pixel AUC error analysis
+    from scipy.stats import rankdata
+    if False:        
+        scores_flat = np.maximum(scores.reshape(-1,1),0)
+        ranks_flat = rankdata(scores_flat)
+        scores = scores_flat.reshape(N,H,W)
+        ranks = ranks_flat.reshape(N,H,W)
+        mask_rank = (gt_masks*ranks).sum(dim=(1,2))
+        unmask_rank = ((1-gt_masks)*ranks).sum(dim=(1,2))
+        score_max = scores.max(dim=(1,2))
+        false_negatives=(rankdata(rankdata(score_max))[labels==1])[-10:]
+        false_positives=(rankdata(rankdata(score_max))[labels==0])[:10]
 
     # average precision
     pix_ap = round(average_precision_score(gt_masks.flatten(), scores.flatten()), 5)
