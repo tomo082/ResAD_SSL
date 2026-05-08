@@ -298,6 +298,9 @@ def calculate_metrics(scores, labels, gt_masks, pro=True, only_max_value=True):
         ranks = ranks_flat.reshape(N,H,W)
         mask_rank = (gt_masks*ranks).sum(dim=(1,2))
         unmask_rank = ((1-gt_masks)*ranks).sum(dim=(1,2))
+        fn_mask=(rankdata(rankdata(mask_rank))[labels==1])[-10:]
+        fn_unmask = (rankdata(rankdata(unmask_rank))[labels==0])[:10]
+        
         score_max = scores.max(dim=(1,2))
         false_negatives=(rankdata(rankdata(score_max))[labels==1])[-10:]
         false_positives=(rankdata(rankdata(score_max))[labels==0])[:10]
