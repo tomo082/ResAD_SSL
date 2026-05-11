@@ -7,15 +7,28 @@ import torch.nn.functional as F
 
 from models.modules import get_position_encoding
 from models.utils import get_logp
-from utils import get_residual_features, get_matched_ref_features,get_fourier_residual_features
-from utils import calculate_metrics, applying_EFDM
+from utils import get_residual_features, get_matched_ref_features, get_fourier_residual_features
+from utils import calculate_metrics
 from losses.utils import get_logp_a
 
 warnings.filterwarnings('ignore')
 
+# ==========================================
+# OSP 適用関数 (main_osp.pyと同じもの)
+# ==========================================
+def apply_osp(residuals_list, proj_matrices, means):
+    osp_results = []
+    for i, res in enumerate(residuals_list):
+        B, C, H, W = res.shape
+        res_flat = res.permute(0, 2, 3, 1).reshape(-1, C)
+        res_centered = res_flat - means[i]
+        res_parallel = torch.mm(res_centered, proj_matrices[i])
+        res_ortho = res_centered - res_parallel
+        osp_results.append(res_ortho.reshape(B, H, W, C).permute(0, 3, 1, 2))
+    return osp_results
+# ==========================================
 
-def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_features, device, class_name):
-    vq_ops.eval()
+def validate(args, encoder, constraintor, estimators, test_loader, ref_features, device, class_name, osp_proj_matrices, osp_means):
     constraintor.eval()
     for estimator in estimators:  
         estimator.eval()
@@ -25,6 +38,7 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
     logps2_list = [list() for _ in range(args.feature_levels)]
     progress_bar = tqdm(total=len(test_loader))
     progress_bar.set_description(f"Evaluating")
+    
     for idx, batch in enumerate(test_loader):
         progress_bar.update(1)
         
@@ -36,15 +50,7 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
         size = image.shape[-1]
         
         with torch.no_grad():
-            if args.backbone == 'wide_resnet50_2':
-                features = encoder(image)
-                mfeatures = get_matched_ref_features(features, ref_features)
-                rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
-            elif args.backbone == 'tf_efficientnet_b6':#10/26追加
-                features = encoder(image)
-                mfeatures = get_matched_ref_features(features, ref_features)
-                rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
-            elif args.backbone == 'vit_base_patch14':
+            if args.backbone in ['wide_resnet50_2', 'tf_efficientnet_b6', 'vit_base_patch14']:
                 features = encoder(image)
                 mfeatures = get_matched_ref_features(features, ref_features)
                 rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
@@ -56,16 +62,17 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
                 mfeatures = get_matched_ref_features(features, ref_features)
                 rfeatures = get_residual_features(features, mfeatures)
             
-            fdm_features = vq_ops(rfeatures, train=False)
-            rfeatures = applying_EFDM(rfeatures, fdm_features, alpha=args.fdm_alpha)
+            # --- VQとEFDMの代わりにOSPを適用 ---
+            rfeatures = apply_osp(rfeatures, osp_proj_matrices, osp_means)
+            
+            # --- constraintorで滑らかに補正 ---
             rfeatures = constraintor(*rfeatures)
         
             for l in range(args.feature_levels):
-                e = rfeatures[l]  # BxCxHxW
+                e = rfeatures[l]  
                 bs, dim, h, w = e.size()
                 e = e.permute(0, 2, 3, 1).reshape(-1, dim)
                 
-                # (bs, 128, h, w)
                 pos_embed = get_position_encoding(args.pos_embed_dim, h, w).to(args.device).unsqueeze(0).repeat(bs, 1, 1, 1)
                 pos_embed = pos_embed.permute(0, 2, 3, 1).reshape(-1, args.pos_embed_dim)
                 estimator = estimators[l]
@@ -79,8 +86,8 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
                 logps = logps / dim  
                 logps1_list[l].append(logps.reshape(bs, h, w))
                 
-                logps_a = get_logp_a(dim, z, log_jac_det)  # logps corresponding to abnormal distribution
-                logits = torch.stack([logps, logps_a], dim=-1)  # (N, 2)
+                logps_a = get_logp_a(dim, z, log_jac_det)  
+                logits = torch.stack([logps, logps_a], dim=-1)  
                 sa = torch.softmax(logits, dim=-1)[:, 1]
                 logps2_list[l].append(sa.reshape(bs, h, w))
     
@@ -109,21 +116,16 @@ def convert_to_anomaly_scores(logps_list, feature_levels=3, class_name=None, siz
     normal_map = [list() for _ in range(feature_levels)]
     for l in range(feature_levels):
         logps = torch.cat(logps_list[l], dim=0)  
-        logps-= torch.max(logps) # normalize log-likelihoods to (-Inf:0] by subtracting a constant
-        probs = torch.exp(logps) # convert to probs in range [0:1]
-        # upsample
-        normal_map[l] = F.interpolate(probs.unsqueeze(1),
-            size=size, mode='bilinear', align_corners=True).squeeze().cpu().numpy()
+        logps-= torch.max(logps) 
+        probs = torch.exp(logps) 
+        normal_map[l] = F.interpolate(probs.unsqueeze(1), size=size, mode='bilinear', align_corners=True).squeeze().cpu().numpy()
     
-    # score aggregation
     scores = np.zeros_like(normal_map[0])
     for l in range(feature_levels):
         scores += normal_map[l]
 
-    # normality score to anomaly score
     scores = scores.max() - scores 
     
-    #if class_name in ['pill', 'cable', 'capsule', 'screw']:
     for i in range(scores.shape[0]):
         scores[i] = gaussian_filter(scores[i], sigma=4)
 
@@ -134,11 +136,8 @@ def aggregate_anomaly_scores(logps_list, feature_levels=3, class_name=None, size
     abnormal_map = [list() for _ in range(feature_levels)]
     for l in range(feature_levels):
         probs = torch.cat(logps_list[l], dim=0)  
-        # upsample
-        abnormal_map[l] = F.interpolate(probs.unsqueeze(1),
-            size=size, mode='bilinear', align_corners=True).squeeze().cpu().numpy()
+        abnormal_map[l] = F.interpolate(probs.unsqueeze(1), size=size, mode='bilinear', align_corners=True).squeeze().cpu().numpy()
     
-    # score aggregation
     scores = np.zeros_like(abnormal_map[0])
     for l in range(feature_levels):
         scores += abnormal_map[l]
