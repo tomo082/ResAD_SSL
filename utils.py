@@ -515,3 +515,63 @@ def get_mc_soft_matched_features(features: List[Tensor], class_names: List[str],
             
     matched_ref_features = [torch.cat(item, dim=0) for item in matched_ref_features]
     return matched_ref_features
+def compute_osp_matrices_from_refs(ref_features_tuple, keep_variance=0.95):
+    """
+    参照特徴量 (正常データ) から、レイヤーごとの射影行列と平均ベクトルを計算する。
+    ref_features_tuple: (layer1_refs, layer2_refs, layer3_refs) などのタプル
+                        各 tensor は [N, C] または [N, C, H, W] などの形状
+    """
+    proj_matrices = []
+    means = []
+    
+    for ref_feat in ref_features_tuple:
+        # 形状を [Batch*H*W, Channels] の2次元に平坦化する
+        if ref_feat.dim() == 4:
+            B, C, H, W = ref_feat.shape
+            flat_ref = ref_feat.permute(0, 2, 3, 1).reshape(-1, C)
+        elif ref_feat.dim() == 3:
+            B, L, C = ref_feat.shape
+            flat_ref = ref_feat.reshape(-1, C)
+        else:
+            flat_ref = ref_feat
+            C = flat_ref.shape[-1]
+            
+        mean = flat_ref.mean(dim=0, keepdim=True)
+        centered = flat_ref - mean
+        
+        # 特異値分解 (SVD) を計算
+        U, S, V = torch.linalg.svd(centered.cpu(), full_matrices=False)
+        
+        # 寄与率から上位 k 次元を決定
+        var = (S ** 2) / (centered.size(0) - 1)
+        cum_var = torch.cumsum(var, dim=0) / var.sum()
+        k = torch.searchsorted(cum_var, keep_variance).item() + 1
+        
+        basis = V[:k, :].T.to(ref_feat.device)  # [C, k]
+        proj_matrix = torch.mm(basis, basis.T)  # [C, C]
+        
+        proj_matrices.append(proj_matrix)
+        means.append(mean.to(ref_feat.device))
+        
+    return proj_matrices, means
+
+def apply_osp(rfeatures_list, proj_matrices, means):
+    """
+    抽出された残差リストに対して、正常空間成分を削り落とす。
+    """
+    osp_residuals = []
+    for i, rfeat in enumerate(rfeatures_list):
+        B, C, H, W = rfeat.shape
+        r_flat = rfeat.permute(0, 2, 3, 1).reshape(-1, C)
+        
+        # 平行成分（正常なズレ）を計算
+        r_parallel = torch.mm(r_flat - means[i], proj_matrices[i])
+        
+        # 直交成分（純粋な異常）を残す
+        r_orthogonal = (r_flat - means[i]) - r_parallel
+        
+        # 元の形状に戻す
+        r_orthogonal = r_orthogonal.reshape(B, H, W, C).permute(0, 3, 1, 2)
+        osp_residuals.append(r_orthogonal)
+        
+    return osp_residuals
