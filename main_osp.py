@@ -189,6 +189,9 @@ def main(args):
             
             # constraintor適用
             rfeatures = constraintor(*rfeatures)
+   # 学習時のみ、特徴量に微小なノイズを付加して過学習を防ぐ
+            noise_std = 0.01  # ノイズの強さ（0.005 〜 0.05あたりで調整）
+            rfeatures_noisy = [rf + torch.randn_like(rf) * noise_std for rf in rfeatures]                 
             loss = 0
             for l in range(args.feature_levels):  
                 e = rfeatures[l]  
