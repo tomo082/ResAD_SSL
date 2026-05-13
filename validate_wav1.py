@@ -1,4 +1,3 @@
-
 import warnings
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter
@@ -14,9 +13,11 @@ from losses.utils import get_logp_a
 
 warnings.filterwarnings('ignore')
 
-def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, ref_features, device, class_name):
+def validate(args, encoder, constraintor, vqs, wav_filter, estimators, test_loader, ref_features, device, class_name):
     constraintor.eval()
     wav_filter.eval()
+    for vq in vqs:
+        vq.eval()
     for estimator in estimators:  
         estimator.eval()
     
@@ -38,17 +39,15 @@ def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, r
         
         with torch.no_grad():
             features = encoder(image)
-            
-            # --- 【重要】テスト画像側の特徴量をウェーブレット変換 (Pre-filter) ---
             features = [wav_filter(f) for f in features]
             
-            # --- 【重要】カンペ側は既に _wav ファイルとして保存・ロードされているためそのままマッチング ---
             mfeatures = get_matched_ref_features(features, ref_features)
-            
-            # マッチング後の残差を計算
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             
-            # Constraintorで空間的に滑らかに補正
+            for l in range(args.feature_levels):
+                out = vqs[l](rfeatures[l])
+                rfeatures[l] = out[0]
+            
             rfeatures = constraintor(*rfeatures)
         
             for l in range(args.feature_levels):
