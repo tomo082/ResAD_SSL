@@ -148,8 +148,7 @@ def main(args):
                 
                 # 3. 訓練用の参照特徴量を抽出し、それらもウェーブレット変換
                 ref_features = get_mc_reference_features_wav(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot,wav_filter=wav_filter)
-                for c_name in ref_features.keys():
-                    ref_features[c_name] = [wav_filter(rf) for rf in ref_features[c_name]]
+
                 
                 # 4. 「エッジ強調された特徴量同士」でマッチング
                 mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
