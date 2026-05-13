@@ -21,7 +21,7 @@ from datasets.capsules import CAPSULES, CAPSULESANO
 
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
-from models.vq import VectorQuantize
+from models.vq import VectorQuantizer # 正しいクラス名に変更
 from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features_wav
 from utils import BoundaryAverager
 from losses.loss import calculate_log_barrier_bi_occ_loss
@@ -39,6 +39,9 @@ SETTINGS = {'visa_to_mvtec': VISA_TO_MVTEC, 'mvtec_to_visa': MVTEC_TO_VISA,
             'mvtec_to_mpdd': MVTEC_TO_MPDD, 'mvtec_to_mvtecloco': MVTEC_TO_MVTECLOCO,
             'mvtec_to_brats': MVTEC_TO_BRATS,'mvtec_to_mvtec':MVTEC_TO_MVTEC, 'visa_to_visa':VISA_TO_VISA, 'capsules_to_capsules': CAPSULES_TO_CAPSULES}
 
+# ==========================================
+# Haar Wavelet Filter
+# ==========================================
 class HaarWaveletFilter(nn.Module):
     def __init__(self, low_freq_weight=0.1, high_freq_weight=1.2):
         super().__init__()
@@ -107,7 +110,8 @@ def main(args):
     wav_filter = HaarWaveletFilter(low_freq_weight=args.lf_weight, high_freq_weight=args.hf_weight).to(args.device)
     wav_filter.eval()
     
-    vqs = [VectorQuantize(dim=feat_dim, n_embed=args.num_embeddings).to(args.device) for feat_dim in feat_dims]
+    # VQモデルの初期化 (引数を VectorQuantizer の仕様に合わせる)
+    vqs = [VectorQuantizer(n_e=args.num_embeddings, vq_embed_dim=feat_dim, beta=0.25).to(args.device) for feat_dim in feat_dims]
     params_vq = [p for vq in vqs for p in vq.parameters()]
     optimizer2 = torch.optim.Adam(params_vq, lr=args.lr, weight_decay=0.005)
     scheduler2 = torch.optim.lr_scheduler.MultiStepLR(optimizer2, milestones=[30, 50], gamma=0.1)
@@ -153,18 +157,23 @@ def main(args):
                 mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
                 rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             
-            vq_loss_total = 0
-            for l in range(args.feature_levels):
-                out = vqs[l](rfeatures[l])
-                rfeatures[l] = out[0]
-                vq_loss_total += out[-1].mean()
-
+            # 先にマスクのリサイズ処理を行ってVQに渡せるようにする
             lvl_masks = []
             for l in range(args.feature_levels):
                 _, _, h, w = rfeatures[l].size()
                 lvl_masks.append(F.interpolate(masks, size=(h, w), mode='nearest').squeeze(1))
+            
+            # VQの適用 (マスク情報を渡す)
+            vq_loss_total = 0
+            for l in range(args.feature_levels):
+                z_q, vq_loss, _ = vqs[l](rfeatures[l], lvl_masks[l])
+                rfeatures[l] = z_q
+                vq_loss_total += vq_loss
+
+            # 制約対象となる量子化後の特徴量を保存
             rfeatures_t = [rfeature.detach().clone() for rfeature in rfeatures]
             
+            # Constraintorで空間補正
             rfeatures = constraintor(*rfeatures)
             
             noise_std = 0.01
