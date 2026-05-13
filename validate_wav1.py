@@ -16,7 +16,7 @@ warnings.filterwarnings('ignore')
 def validate(args, encoder, vq_ops, constraintor, wav_filter, estimators, test_loader, ref_features, device, class_name):
     vq_ops.eval()
     constraintor.eval()
-    wav_filter.eval()
+    wav_filter.eval() # 追加
     for estimator in estimators:  
         estimator.eval()
     
@@ -24,7 +24,8 @@ def validate(args, encoder, vq_ops, constraintor, wav_filter, estimators, test_l
     logps1_list = [list() for _ in range(args.feature_levels)]
     logps2_list = [list() for _ in range(args.feature_levels)]
     
-    progress_bar = tqdm(total=len(test_loader), desc=f"Evaluating {class_name}")
+    progress_bar = tqdm(total=len(test_loader))
+    progress_bar.set_description(f"Evaluating {class_name}")
     
     for idx, batch in enumerate(test_loader):
         progress_bar.update(1)
@@ -37,21 +38,17 @@ def validate(args, encoder, vq_ops, constraintor, wav_filter, estimators, test_l
         size = image.shape[-1]
         
         with torch.no_grad():
-            # 画像から特徴抽出
             features = encoder(image)
             
             # --- 追加: テスト画像をウェーブレット変換 (Pre-filter) ---
             features = [wav_filter(f) for f in features]
             
-            # ウェーブレット済みのカンペとマッチング
             mfeatures = get_matched_ref_features(features, ref_features)
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             
-            # --- 元の validate.py と同じ VQ の適用 ---
-            # VQを通すことで、特徴量が離散的なコードブックにマッピングされる
-            rfeatures = list(vq_ops(rfeatures, train=False))
-            
-            # Constraintorで空間を滑らかにする
+            # 元の validate.py と全く同じ VQ と constraintor の処理
+            qx1, qx2, qx3 = vq_ops(rfeatures, train=False)
+            rfeatures = [qx1, qx2, qx3]
             rfeatures = constraintor(*rfeatures)
         
             for l in range(args.feature_levels):
@@ -91,11 +88,12 @@ def validate(args, encoder, vq_ops, constraintor, wav_filter, estimators, test_l
     scores = (scores1 + scores2) / 2
     img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = calculate_metrics(scores, labels, gt_masks, pro=False, only_max_value=True)
     
-    metrics = {
-        'scores1': [img_auc1, img_ap1, img_f1_score1, pix_auc1, pix_ap1, pix_f1_score1, pix_aupro1],
-        'scores2': [img_auc2, img_ap2, img_f1_score2, pix_auc2, pix_ap2, pix_f1_score2, pix_aupro2],
-        'scores': [img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro]
-    }
+    # 元の validate.py と全く同じ出力を返す
+    metrics = {}
+    metrics['scores1'] = [img_auc1, img_ap1, img_f1_score1, pix_auc1, pix_ap1, pix_f1_score1, pix_aupro1]
+    metrics['scores2'] = [img_auc2, img_ap2, img_f1_score2, pix_auc2, pix_ap2, pix_f1_score2, pix_aupro2]
+    metrics['scores'] = [img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro]
+    
     return metrics
 
 
