@@ -171,7 +171,7 @@ def main(args):
             
             loss = 0
             for l in range(args.feature_levels):  
-                e = rfeatures_noisy[l]  
+                e = rfeatures[l]  
                 t = rfeatures_t[l]
                 bs, dim, h, w = e.size()
                 e, t = e.permute(0, 2, 3, 1).reshape(-1, dim), t.permute(0, 2, 3, 1).reshape(-1, dim)
