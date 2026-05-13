@@ -285,7 +285,7 @@ if __name__ == "__main__":
     parser.add_argument('--clamp_alpha', type=float, default=1.9)    
     parser.add_argument('--margin_tau', type=float, default=0.1)
     parser.add_argument('--bgspp_lambda', type=float, default=1)
-    parser.add_argument('--fdm_alpha', type=float, default=0.4)]
+    parser.add_argument('--fdm_alpha', type=float, default=0.4)
     parser.add_argument('--num_embeddings', type=int, default=1536)
             
     # ウェーブレット用パラメータ
