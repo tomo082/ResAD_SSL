@@ -9,7 +9,7 @@ import timm
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from validate_wav1 import validate
+from validate_wav1 import validate  # validate_wav1 をインポート
 from datasets.mvtec import MVTEC, MVTECANO
 from datasets.visa import VISA, VISAANO
 from datasets.btad import BTAD
@@ -21,7 +21,7 @@ from datasets.capsules import CAPSULES, CAPSULESANO
 
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
-from models.vq import MultiScaleVQ  # 元の MultiScaleVQ に戻す
+from models.vq import MultiScaleVQ  # 元の MultiScaleVQ を使用
 from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features_wav
 from utils import BoundaryAverager
 from losses.loss import calculate_log_barrier_bi_occ_loss
@@ -107,10 +107,11 @@ def main(args):
         
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
     
+    # ウェーブレットフィルタの初期化
     wav_filter = HaarWaveletFilter(low_freq_weight=args.lf_weight, high_freq_weight=args.hf_weight).to(args.device)
     wav_filter.eval()
     
-    # 元の main.py と同じ MultiScaleVQ の初期化
+    # VQの初期化 (元のmain.pyと同じ)
     vq_ops = MultiScaleVQ(num_embeddings=args.num_embeddings, channels=feat_dims).to(args.device)
     optimizer_vq = torch.optim.Adam(vq_ops.parameters(), lr=args.lr, weight_decay=0.0005)
     scheduler_vq = torch.optim.lr_scheduler.MultiStepLR(optimizer_vq, milestones=[30, 50], gamma=0.1)
@@ -119,7 +120,8 @@ def main(args):
     optimizer0 = torch.optim.Adam(constraintor.parameters(), lr=args.lr, weight_decay=0.0005)
     scheduler0 = torch.optim.lr_scheduler.MultiStepLR(optimizer0, milestones=[30, 50], gamma=0.1)
     
-    estimators = [load_flow_model(args, feat_dim).to(args.device) for feat_dim in feat_dims]
+    estimators = [load_flow_model(args, feat_dim) for feat_dim in feat_dims]
+    estimators = [decoder.to(args.device) for decoder in estimators]
     params = list(estimators[0].parameters())
     for l in range(1, args.feature_levels):
         params += list(estimators[l].parameters())
@@ -131,8 +133,8 @@ def main(args):
     N_batch = 8192
     
     for epoch in range(args.epochs):
-        constraintor.train()
         vq_ops.train()
+        constraintor.train()
         for estimator in estimators:
             estimator.train()
             
@@ -147,11 +149,16 @@ def main(args):
             images, masks = images.to(args.device), masks.to(args.device)
             
             with torch.no_grad():
+                # 画像から特徴抽出
                 features = encoder(images)
+                
+                # --- 追加: ウェーブレットフィルタを適用 (Pre-filter) ---
                 features = [wav_filter(f) for f in features]
                 
+                # 訓練用の参照特徴量を抽出し、内部でウェーブレット変換させる
                 ref_features = get_mc_reference_features_wav(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot, wav_filter=wav_filter)
                 
+                # マッチングと残差計算
                 mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
                 rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             
@@ -161,7 +168,8 @@ def main(args):
                 lvl_masks.append(F.interpolate(masks, size=(h, w), mode='nearest').squeeze(1))
             rfeatures_t = [rfeature.detach().clone() for rfeature in rfeatures]
             
-            # 元の main.py に準拠: vq_ops でロスだけを計算 (rfeatures は無傷)
+            # --- 元の main.py と同じ VQ の学習 ---
+            # VQは rfeatures を変更せず、loss_vq だけを返す
             loss_vq = vq_ops(rfeatures, lvl_masks, train=True)
             train_loss_total += loss_vq.item()
             total_num += 1
@@ -169,20 +177,19 @@ def main(args):
             loss_vq.backward()
             optimizer_vq.step()
             
-            # rfeatures は4次元のまま constraintor に入る
+            # --- 元の main.py と同じ constraintor の適用 ---
             rfeatures = constraintor(*rfeatures)
-            
-            # 過学習防止ノイズ (不要な場合はコメントアウト)
-            noise_std = 0.01
-            rfeatures_noisy = [rf + torch.randn_like(rf) * noise_std for rf in rfeatures]
             
             loss = 0
             for l in range(args.feature_levels):  
-                e = rfeatures_noisy[l]  
+                e = rfeatures[l]  
                 t = rfeatures_t[l]
                 bs, dim, h, w = e.size()
-                e, t = e.permute(0, 2, 3, 1).reshape(-1, dim), t.permute(0, 2, 3, 1).reshape(-1, dim)
-                m = lvl_masks[l].reshape(-1)
+                e = e.permute(0, 2, 3, 1).reshape(-1, dim)
+                t = t.permute(0, 2, 3, 1).reshape(-1, dim)
+                m = lvl_masks[l]
+                m = m.reshape(-1)
+                
                 loss_i, _, _ = calculate_log_barrier_bi_occ_loss(e, m, t)
                 loss += loss_i
                 
@@ -204,9 +211,11 @@ def main(args):
         progress_bar.close()
         print(f"Epoch[{epoch}/{args.epochs}]: train_loss: {train_loss_total / total_num}")
         
+        # --- 評価フェーズ ---
         if (epoch + 1) % args.eval_freq == 0:
             s1_res, s2_res, s_res = [], [], []
             
+            # 抽出済みの _wav 特徴量をロード
             test_ref_features = load_mc_reference_features(args.test_ref_feature_dir, CLASSES['unseen'], args.device, args.num_ref_shot)
             
             for class_name in CLASSES['unseen']:
@@ -231,6 +240,7 @@ def main(args):
                 
                 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=8, drop_last=False)
                 
+                # validate関数に vq_ops と wav_filter を渡す
                 metrics = validate(args, encoder, vq_ops, constraintor, wav_filter, estimators, test_loader, test_ref_features[class_name], args.device, class_name)
                 
                 img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = metrics['scores']
@@ -240,7 +250,12 @@ def main(args):
                 s2_res.append(metrics['scores2'])
                 s_res.append(metrics['scores'])
             
-            img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = np.mean(np.array(s_res), axis=0)
+            s1_res = np.array(s1_res)
+            s2_res = np.array(s2_res)
+            s_res = np.array(s_res)
+            img_auc1, img_ap1, img_f1_score1, pix_auc1, pix_ap1, pix_f1_score1, pix_aupro1 = np.mean(s1_res, axis=0)
+            img_auc2, img_ap2, img_f1_score2, pix_auc2, pix_ap2, pix_f1_score2, pix_aupro2 = np.mean(s2_res, axis=0)
+            img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = np.mean(s_res, axis=0)
             print('(Merged) Average Image AUC | AP | F1_Score: {:.3f} | {:.3f} | {:.3f}, Average Pixel AUC | AP | F1_Score | AUPRO: {:.3f} | {:.3f} | {:.3f} | {:.3f}'.format(
                 img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro))
             
@@ -279,6 +294,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_path', type=str, default="./checkpoints/")
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--backbone', type=str, default="wide_resnet50_2")
+    parser.add_argument('--rank', type=int, default="0")
     
     parser.add_argument('--flow_arch', type=str, default='conditional_flow_model')
     parser.add_argument('--feature_levels', default=3, type=int)
