@@ -23,7 +23,8 @@ def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, r
     logps1_list = [list() for _ in range(args.feature_levels)]
     logps2_list = [list() for _ in range(args.feature_levels)]
     
-    progress_bar = tqdm(total=len(test_loader), desc=f"Evaluating {class_name}")
+    progress_bar = tqdm(total=len(test_loader))
+    progress_bar.set_description(f"Evaluating {class_name}")
     
     for idx, batch in enumerate(test_loader):
         progress_bar.update(1)
@@ -38,16 +39,12 @@ def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, r
         with torch.no_grad():
             features = encoder(image)
             
-            # --- 【重要】テスト画像側の特徴量をウェーブレット変換 (Pre-filter) ---
+            # --- 追加: テスト画像をウェーブレット変換 (Pre-filter) ---
             features = [wav_filter(f) for f in features]
             
-            # --- 【重要】カンペ側は既に _wav ファイルとして保存・ロードされているためそのままマッチング ---
             mfeatures = get_matched_ref_features(features, ref_features)
-            
-            # マッチング後の残差を計算
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             
-            # Constraintorで空間的に滑らかに補正
             rfeatures = constraintor(*rfeatures)
         
             for l in range(args.feature_levels):
@@ -87,11 +84,11 @@ def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, r
     scores = (scores1 + scores2) / 2
     img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = calculate_metrics(scores, labels, gt_masks, pro=False, only_max_value=True)
     
-    metrics = {
-        'scores1': [img_auc1, img_ap1, img_f1_score1, pix_auc1, pix_ap1, pix_f1_score1, pix_aupro1],
-        'scores2': [img_auc2, img_ap2, img_f1_score2, pix_auc2, pix_ap2, pix_f1_score2, pix_aupro2],
-        'scores': [img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro]
-    }
+    metrics = {}
+    metrics['scores1'] = [img_auc1, img_ap1, img_f1_score1, pix_auc1, pix_ap1, pix_f1_score1, pix_aupro1]
+    metrics['scores2'] = [img_auc2, img_ap2, img_f1_score2, pix_auc2, pix_ap2, pix_f1_score2, pix_aupro2]
+    metrics['scores'] = [img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro]
+    
     return metrics
 
 
