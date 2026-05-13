@@ -575,3 +575,69 @@ def apply_osp(rfeatures_list, proj_matrices, means):
         osp_residuals.append(r_orthogonal)
         
     return osp_residuals
+import torch
+import torch.nn.functional as F
+import torch.nn as nn
+
+class HaarWaveletFilter(nn.Module):
+    def __init__(self, low_freq_weight=0.1, high_freq_weight=1.0):
+        super().__init__()
+        self.low_freq_weight = low_freq_weight
+        self.high_freq_weight = high_freq_weight
+        
+        # Haarウェーブレットのカーネル定義 (2x2)
+        # LL: 低周波, HL: 垂直エッジ, LH: 水平エッジ, HH: 対角エッジ
+        ll = torch.tensor([[0.5, 0.5], [0.5, 0.5]])
+        hl = torch.tensor([[-0.5, -0.5], [0.5, 0.5]])
+        lh = torch.tensor([[-0.5, 0.5], [-0.5, 0.5]])
+        hh = torch.tensor([[0.5, -0.5], [-0.5, 0.5]])
+        
+        self.register_buffer('kernel_ll', ll.view(1, 1, 2, 2))
+        self.register_buffer('kernel_hl', hl.view(1, 1, 2, 2))
+        self.register_buffer('kernel_lh', lh.view(1, 1, 2, 2))
+        self.register_buffer('kernel_hh', hh.view(1, 1, 2, 2))
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        
+        # チャネルごとに独立して畳み込むため、カーネルをチャネル数分コピー
+        weight_ll = self.kernel_ll.expand(C, 1, 2, 2)
+        weight_hl = self.kernel_hl.expand(C, 1, 2, 2)
+        weight_lh = self.kernel_lh.expand(C, 1, 2, 2)
+        weight_hh = self.kernel_hh.expand(C, 1, 2, 2)
+        
+        # DWT (離散ウェーブレット変換) - stride=2 でダウンサンプリング
+        x_ll = F.conv2d(x, weight_ll, stride=2, groups=C)
+        x_hl = F.conv2d(x, weight_hl, stride=2, groups=C)
+        x_lh = F.conv2d(x, weight_lh, stride=2, groups=C)
+        x_hh = F.conv2d(x, weight_hh, stride=2, groups=C)
+        
+        # --- フィルタリング処理 ---
+        # 位置ズレ（低周波）を弱め、キズ（高周波）を強調する
+        x_ll = x_ll * self.low_freq_weight
+        x_hl = x_hl * self.high_freq_weight
+        x_lh = x_lh * self.high_freq_weight
+        x_hh = x_hh * self.high_freq_weight
+        
+        # IDWT (逆離散ウェーブレット変換) - stride=2 で元の解像度に戻す
+        out_ll = F.conv_transpose2d(x_ll, weight_ll, stride=2, groups=C)
+        out_hl = F.conv_transpose2d(x_hl, weight_hl, stride=2, groups=C)
+        out_lh = F.conv_transpose2d(x_lh, weight_lh, stride=2, groups=C)
+        out_hh = F.conv_transpose2d(x_hh, weight_hh, stride=2, groups=C)
+        
+        # 全ての成分を足し合わせて再構成
+        return out_ll + out_hl + out_lh + out_hh
+
+def apply_wavelet_filter(rfeatures):
+    """
+    残差特徴量のリストに対してウェーブレットフィルタを適用する
+    """
+    device = rfeatures[0].device
+    # 低周波(位置ズレ)を10%に抑え、高周波(キズ)をそのまま通す
+    wavelet_filter = HaarWaveletFilter(low_freq_weight=0.1, high_freq_weight=1.0).to(device)
+    
+    filtered_rfeatures = []
+    for rf in rfeatures:
+        filtered_rfeatures.append(wavelet_filter(rf))
+        
+    return filtered_rfeatures
