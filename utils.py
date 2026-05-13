@@ -233,7 +233,29 @@ def get_mc_reference_features(encoder, root, class_names, device, num_shot=4):
                 features[l] = features[l].permute(0, 2, 3, 1).reshape(-1, c)
             reference_features[class_name] = features
     return reference_features
-
+def get_mc_reference_features_wav(encoder, root, class_names, device, num_shot=4, wav_filter=None):
+    """
+    Get reference features for multiple classes.
+    """
+    reference_features = {}
+    class_names = np.unique(class_names)
+    for class_name in class_names:
+        normal_paths = get_random_normal_images(root, class_name, num_shot)
+        images = load_and_transform_vision_data(normal_paths, device)
+        with torch.no_grad():
+            features = encoder(images)
+            
+            # ======== 【追加】 ========
+            # 平坦化(reshape)される前に空間情報(H, W)を保ったままウェーブレット変換を適用
+            if wav_filter is not None:
+                features = [wav_filter(f) for f in features]
+            # ========================
+            
+            for l in range(len(features)):
+                bs, c, h, w = features[l].shape
+                features[l] = features[l].permute(0, 2, 3, 1).reshape(-1, c)
+            reference_features[class_name] = features
+    return reference_features
 
 def load_and_transform_vision_data(image_paths, device):
     if image_paths is None:
