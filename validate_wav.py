@@ -13,10 +13,9 @@ from losses.utils import get_logp_a
 
 warnings.filterwarnings('ignore')
 
-# validate関数に wav_filter を引数として追加
 def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, ref_features, device, class_name):
     constraintor.eval()
-    wav_filter.eval() # ウェーブレットフィルタもevalモードに
+    wav_filter.eval()
     for estimator in estimators:  
         estimator.eval()
     
@@ -24,8 +23,7 @@ def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, r
     logps1_list = [list() for _ in range(args.feature_levels)]
     logps2_list = [list() for _ in range(args.feature_levels)]
     
-    progress_bar = tqdm(total=len(test_loader))
-    progress_bar.set_description(f"Evaluating {class_name}")
+    progress_bar = tqdm(total=len(test_loader), desc=f"Evaluating {class_name}")
     
     for idx, batch in enumerate(test_loader):
         progress_bar.update(1)
@@ -39,15 +37,17 @@ def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, r
         
         with torch.no_grad():
             features = encoder(image)
+            
+            # --- 【重要】テスト画像側の特徴量をウェーブレット変換 (Pre-filter) ---
+            features = [wav_filter(f) for f in features]
+            
+            # --- 【重要】カンペ側は既に _wav ファイルとして保存・ロードされているためそのままマッチング ---
             mfeatures = get_matched_ref_features(features, ref_features)
             
-            # 生の残差を計算
+            # マッチング後の残差を計算
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             
-            # --- 【重要】学習時と同じウェーブレット処理で位置ズレノイズを抑制 ---
-            rfeatures = [wav_filter(rf) for rf in rfeatures]
-            
-            # --- 【重要】constraintorで空間的に滑らかに補正 ---
+            # Constraintorで空間的に滑らかに補正
             rfeatures = constraintor(*rfeatures)
         
             for l in range(args.feature_levels):
@@ -78,8 +78,8 @@ def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, r
     labels = np.concatenate(label_list)
     gt_masks = np.concatenate(gt_mask_list, axis=0)
     
-    scores1 = convert_to_anomaly_scores(logps1_list, feature_levels=args.feature_levels, class_name=class_name, size=size)
-    scores2 = aggregate_anomaly_scores(logps2_list, feature_levels=args.feature_levels, class_name=class_name, size=size)
+    scores1 = convert_to_anomaly_scores(logps1_list, feature_levels=args.feature_levels, size=size)
+    scores2 = aggregate_anomaly_scores(logps2_list, feature_levels=args.feature_levels, size=size)
     
     img_auc1, img_ap1, img_f1_score1, pix_auc1, pix_ap1, pix_f1_score1, pix_aupro1 = calculate_metrics(scores1, labels, gt_masks, pro=False, only_max_value=True)
     img_auc2, img_ap2, img_f1_score2, pix_auc2, pix_ap2, pix_f1_score2, pix_aupro2 = calculate_metrics(scores2, labels, gt_masks, pro=False, only_max_value=True)
@@ -87,15 +87,15 @@ def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, r
     scores = (scores1 + scores2) / 2
     img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = calculate_metrics(scores, labels, gt_masks, pro=False, only_max_value=True)
     
-    metrics = {}
-    metrics['scores1'] = [img_auc1, img_ap1, img_f1_score1, pix_auc1, pix_ap1, pix_f1_score1, pix_aupro1]
-    metrics['scores2'] = [img_auc2, img_ap2, img_f1_score2, pix_auc2, pix_ap2, pix_f1_score2, pix_aupro2]
-    metrics['scores'] = [img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro]
-    
+    metrics = {
+        'scores1': [img_auc1, img_ap1, img_f1_score1, pix_auc1, pix_ap1, pix_f1_score1, pix_aupro1],
+        'scores2': [img_auc2, img_ap2, img_f1_score2, pix_auc2, pix_ap2, pix_f1_score2, pix_aupro2],
+        'scores': [img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro]
+    }
     return metrics
 
 
-def convert_to_anomaly_scores(logps_list, feature_levels=3, class_name=None, size=224):
+def convert_to_anomaly_scores(logps_list, feature_levels=3, size=224):
     normal_map = [list() for _ in range(feature_levels)]
     for l in range(feature_levels):
         logps = torch.cat(logps_list[l], dim=0)  
@@ -113,7 +113,7 @@ def convert_to_anomaly_scores(logps_list, feature_levels=3, class_name=None, siz
     return scores
 
 
-def aggregate_anomaly_scores(logps_list, feature_levels=3, class_name=None, size=224):
+def aggregate_anomaly_scores(logps_list, feature_levels=3, size=224):
     abnormal_map = [list() for _ in range(feature_levels)]
     for l in range(feature_levels):
         probs = torch.cat(logps_list[l], dim=0)  
