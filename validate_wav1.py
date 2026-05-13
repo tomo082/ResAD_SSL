@@ -44,9 +44,9 @@ def validate(args, encoder, constraintor, vqs, wav_filter, estimators, test_load
             mfeatures = get_matched_ref_features(features, ref_features)
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             
+            # 推論時のVQ適用 (get_condebook_entryを使用)
             for l in range(args.feature_levels):
-                out = vqs[l](rfeatures[l])
-                rfeatures[l] = out[0]
+                rfeatures[l] = vqs[l].get_condebook_entry(rfeatures[l])
             
             rfeatures = constraintor(*rfeatures)
         
