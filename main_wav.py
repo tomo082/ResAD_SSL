@@ -21,7 +21,7 @@ from datasets.capsules import CAPSULES, CAPSULESANO
 
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
-from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features
+from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features_wav
 from utils import BoundaryAverager
 from losses.loss import calculate_log_barrier_bi_occ_loss
 from classes import VISA_TO_MVTEC, MVTEC_TO_VISA, MVTEC_TO_BTAD, MVTEC_TO_MVTEC3D
@@ -147,7 +147,7 @@ def main(args):
                 features = [wav_filter(f) for f in features]
                 
                 # 3. 訓練用の参照特徴量を抽出し、それらもウェーブレット変換
-                ref_features = get_mc_reference_features(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot)
+                ref_features = get_mc_reference_features_wav(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot,wav_filter=wav_filter)
                 for c_name in ref_features.keys():
                     ref_features[c_name] = [wav_filter(rf) for rf in ref_features[c_name]]
                 
