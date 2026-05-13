@@ -110,8 +110,8 @@ def main(args):
     wav_filter.eval()
     
     constraintor = MultiScaleConv(feat_dims).to(args.device)
-    optimizer0 = torch.optim.Adam(constraintor.parameters(), lr=args.lr, weight_decay=0.005) # Weight decay少し強め
-    scheduler0 = torch.optim.lr_scheduler.MultiStepLR(optimizer0, milestones=[30, 50], gamma=0.1) # スケジューラ前倒し
+    optimizer0 = torch.optim.Adam(constraintor.parameters(), lr=args.lr, weight_decay=0.0005) # Weight decay
+    scheduler0 = torch.optim.lr_scheduler.MultiStepLR(optimizer0, milestones=[40, 50], gamma=0.1) # スケジューラ前倒し
     
     estimators = [load_flow_model(args, feat_dim).to(args.device) for feat_dim in feat_dims]
     params = list(estimators[0].parameters())
@@ -167,8 +167,8 @@ def main(args):
             rfeatures = constraintor(*rfeatures)
             
             # (任意) 特徴量への微小ノイズ付加による過学習防止
-            noise_std = 0.01
-            rfeatures_noisy = [rf + torch.randn_like(rf) * noise_std for rf in rfeatures]
+            #noise_std = 0.01
+            #rfeatures_noisy = [rf + torch.randn_like(rf) * noise_std for rf in rfeatures]
             
             loss = 0
             for l in range(args.feature_levels):  
