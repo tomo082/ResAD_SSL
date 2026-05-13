@@ -280,7 +280,14 @@ if __name__ == "__main__":
     parser.add_argument('--pos_embed_dim', type=int, default=256)
     parser.add_argument("--train_ref_shot", type=int, default=4)
     parser.add_argument("--num_ref_shot", type=int, default=4)
-    
+    parser.add_argument('--pos_beta', type=float, default=0.05)            
+    parser.add_argument('--coupling_layers', type=int, default=10)
+    parser.add_argument('--clamp_alpha', type=float, default=1.9)    
+    parser.add_argument('--margin_tau', type=float, default=0.1)
+    parser.add_argument('--bgspp_lambda', type=float, default=1)
+    parser.add_argument('--fdm_alpha', type=float, default=0.4)]
+    parser.add_argument('--num_embeddings', type=int, default=1536)
+            
     # ウェーブレット用パラメータ
     parser.add_argument("--lf_weight", type=float, default=0.1, help="Weight for low frequency (LL)")
     parser.add_argument("--hf_weight", type=float, default=1.2, help="Weight for high frequency (LH, HL, HH)")
