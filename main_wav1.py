@@ -21,7 +21,7 @@ from datasets.capsules import CAPSULES, CAPSULESANO
 
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
-from models.vq import VectorQuantizer # 正しいクラス名に変更
+from models.vq import MultiScaleVQ  # 元の MultiScaleVQ に戻す
 from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features_wav
 from utils import BoundaryAverager
 from losses.loss import calculate_log_barrier_bi_occ_loss
@@ -110,21 +110,20 @@ def main(args):
     wav_filter = HaarWaveletFilter(low_freq_weight=args.lf_weight, high_freq_weight=args.hf_weight).to(args.device)
     wav_filter.eval()
     
-    # VQモデルの初期化 (引数を VectorQuantizer の仕様に合わせる)
-    vqs = [VectorQuantizer(n_e=args.num_embeddings, vq_embed_dim=feat_dim, beta=0.25).to(args.device) for feat_dim in feat_dims]
-    params_vq = [p for vq in vqs for p in vq.parameters()]
-    optimizer2 = torch.optim.Adam(params_vq, lr=args.lr, weight_decay=0.005)
-    scheduler2 = torch.optim.lr_scheduler.MultiStepLR(optimizer2, milestones=[30, 50], gamma=0.1)
+    # 元の main.py と同じ MultiScaleVQ の初期化
+    vq_ops = MultiScaleVQ(num_embeddings=args.num_embeddings, channels=feat_dims).to(args.device)
+    optimizer_vq = torch.optim.Adam(vq_ops.parameters(), lr=args.lr, weight_decay=0.0005)
+    scheduler_vq = torch.optim.lr_scheduler.MultiStepLR(optimizer_vq, milestones=[30, 50], gamma=0.1)
 
     constraintor = MultiScaleConv(feat_dims).to(args.device)
-    optimizer0 = torch.optim.Adam(constraintor.parameters(), lr=args.lr, weight_decay=0.005)
+    optimizer0 = torch.optim.Adam(constraintor.parameters(), lr=args.lr, weight_decay=0.0005)
     scheduler0 = torch.optim.lr_scheduler.MultiStepLR(optimizer0, milestones=[30, 50], gamma=0.1)
     
     estimators = [load_flow_model(args, feat_dim).to(args.device) for feat_dim in feat_dims]
     params = list(estimators[0].parameters())
     for l in range(1, args.feature_levels):
         params += list(estimators[l].parameters())
-    optimizer1 = torch.optim.Adam(params, lr=args.lr, weight_decay=0.005)
+    optimizer1 = torch.optim.Adam(params, lr=args.lr, weight_decay=0.0005)
     scheduler1 = torch.optim.lr_scheduler.MultiStepLR(optimizer1, milestones=[30, 50], gamma=0.1)
     
     from train import train
@@ -133,8 +132,7 @@ def main(args):
     
     for epoch in range(args.epochs):
         constraintor.train()
-        for vq in vqs:
-            vq.train()
+        vq_ops.train()
         for estimator in estimators:
             estimator.train()
             
@@ -157,25 +155,24 @@ def main(args):
                 mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
                 rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             
-            # 先にマスクのリサイズ処理を行ってVQに渡せるようにする
             lvl_masks = []
             for l in range(args.feature_levels):
                 _, _, h, w = rfeatures[l].size()
                 lvl_masks.append(F.interpolate(masks, size=(h, w), mode='nearest').squeeze(1))
-            
-            # VQの適用 (マスク情報を渡す)
-            vq_loss_total = 0
-            for l in range(args.feature_levels):
-                z_q, vq_loss, _ = vqs[l](rfeatures[l], lvl_masks[l])
-                rfeatures[l] = z_q
-                vq_loss_total += vq_loss
-
-            # 制約対象となる量子化後の特徴量を保存
             rfeatures_t = [rfeature.detach().clone() for rfeature in rfeatures]
             
-            # Constraintorで空間補正
+            # 元の main.py に準拠: vq_ops でロスだけを計算 (rfeatures は無傷)
+            loss_vq = vq_ops(rfeatures, lvl_masks, train=True)
+            train_loss_total += loss_vq.item()
+            total_num += 1
+            optimizer_vq.zero_grad()
+            loss_vq.backward()
+            optimizer_vq.step()
+            
+            # rfeatures は4次元のまま constraintor に入る
             rfeatures = constraintor(*rfeatures)
             
+            # 過学習防止ノイズ (不要な場合はコメントアウト)
             noise_std = 0.01
             rfeatures_noisy = [rf + torch.randn_like(rf) * noise_std for rf in rfeatures]
             
@@ -189,12 +186,9 @@ def main(args):
                 loss_i, _, _ = calculate_log_barrier_bi_occ_loss(e, m, t)
                 loss += loss_i
                 
-            loss += vq_loss_total
             optimizer0.zero_grad()
-            optimizer2.zero_grad()
             loss.backward()
             optimizer0.step()
-            optimizer2.step()
             
             train_loss_total += loss.item()
             total_num += 1
@@ -204,9 +198,9 @@ def main(args):
             train_loss_total += loss
             total_num += num
         
+        scheduler_vq.step()
         scheduler0.step()
         scheduler1.step()
-        scheduler2.step()
         progress_bar.close()
         print(f"Epoch[{epoch}/{args.epochs}]: train_loss: {train_loss_total / total_num}")
         
@@ -237,7 +231,7 @@ def main(args):
                 
                 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=8, drop_last=False)
                 
-                metrics = validate(args, encoder, constraintor, vqs, wav_filter, estimators, test_loader, test_ref_features[class_name], args.device, class_name)
+                metrics = validate(args, encoder, vq_ops, constraintor, wav_filter, estimators, test_loader, test_ref_features[class_name], args.device, class_name)
                 
                 img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = metrics['scores']
                 print("Epoch: {}, Class Name: {}, Image AUC: {:.3f} | Pixel AUC: {:.3f} | AUPRO: {:.3f}".format(
@@ -253,8 +247,8 @@ def main(args):
             if img_auc > best_img_auc:
                 os.makedirs(args.checkpoint_path, exist_ok=True)
                 best_img_auc = img_auc
-                state_dict = {'constraintor': constraintor.state_dict(),
-                              'vqs': [vq.state_dict() for vq in vqs],
+                state_dict = {'vq_ops': vq_ops.state_dict(),
+                              'constraintor': constraintor.state_dict(),
                               'estimators': [estimator.state_dict() for estimator in estimators]}
                 torch.save(state_dict, os.path.join(args.checkpoint_path, f'{args.setting}_epoch_{epoch}_checkpoints.pth'))
 
