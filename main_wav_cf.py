@@ -1,4 +1,3 @@
-# main_wav1_cf.py
 import os
 import warnings
 import argparse
@@ -23,7 +22,9 @@ from datasets.capsules import CAPSULES, CAPSULESANO
 
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
-from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features
+# ★ get_random_normal_images, load_and_transform_vision_data を追加インポート
+from utils import init_seeds, get_residual_features, get_mc_matched_ref_features
+from utils import get_random_normal_images, load_and_transform_vision_data
 from utils import BoundaryAverager
 from losses.loss import calculate_log_barrier_bi_occ_loss
 from classes import VISA_TO_MVTEC, MVTEC_TO_VISA, MVTEC_TO_BTAD, MVTEC_TO_MVTEC3D
@@ -39,6 +40,31 @@ SETTINGS = {'visa_to_mvtec': VISA_TO_MVTEC, 'mvtec_to_visa': MVTEC_TO_VISA,
             'mvtec_to_btad': MVTEC_TO_BTAD, 'mvtec_to_mvtec3d': MVTEC_TO_MVTEC3D,
             'mvtec_to_mpdd': MVTEC_TO_MPDD, 'mvtec_to_mvtecloco': MVTEC_TO_MVTECLOCO,
             'mvtec_to_brats': MVTEC_TO_BRATS,'mvtec_to_mvtec':MVTEC_TO_MVTEC, 'visa_to_visa':VISA_TO_VISA, 'capsules_to_capsules': CAPSULES_TO_CAPSULES}
+
+# ==========================================
+# ★ CFモジュール用の専用カンペ抽出関数（平坦化前にCFを通す）
+# ==========================================
+def get_cf_reference_features(encoder, wav_filter, cf_modules, root, class_names, device, num_shot=4):
+    reference_features = {}
+    class_names = np.unique(class_names)
+    for class_name in class_names:
+        normal_paths = get_random_normal_images(root, class_name, num_shot)
+        images = load_and_transform_vision_data(normal_paths, device)
+        with torch.no_grad():
+            features_raw = encoder(images)
+            features_cat = []
+            for l in range(len(features_raw)):
+                # 空間次元(H, W)を保ったままフィルタとCFを通す
+                r_lf, r_hf = wav_filter.get_LF_HF(features_raw[l])
+                r_lf, r_hf = cf_modules[l](r_lf, r_hf)
+                cat_f = torch.cat([r_lf, r_hf], dim=1)
+                
+                # CFを通した後に、マッチング用に平坦化(Flatten)する
+                bs, c, h, w = cat_f.shape
+                cat_f = cat_f.permute(0, 2, 3, 1).reshape(-1, c)
+                features_cat.append(cat_f)
+            reference_features[class_name] = features_cat
+    return reference_features
 
 class HaarWaveletFilter2Component(nn.Module):
     def __init__(self):
@@ -61,12 +87,10 @@ class HaarWaveletFilter2Component(nn.Module):
         hh = F.conv2d(x, self.k_hh.expand(C, 1, 2, 2), stride=2, groups=C)
         
         lf = F.conv_transpose2d(ll, self.k_ll.expand(C, 1, 2, 2), stride=2, groups=C)
-        
         hf_hl = F.conv_transpose2d(hl, self.k_hl.expand(C, 1, 2, 2), stride=2, groups=C)
         hf_lh = F.conv_transpose2d(lh, self.k_lh.expand(C, 1, 2, 2), stride=2, groups=C)
         hf_hh = F.conv_transpose2d(hh, self.k_hh.expand(C, 1, 2, 2), stride=2, groups=C)
         hf = hf_hl + hf_lh + hf_hh
-        
         return lf, hf
 
 class CrossFrequencyModule(nn.Module):
@@ -151,27 +175,20 @@ def main(args):
             with torch.no_grad():
                 features_raw = encoder(images)
             
-            ref_features_raw = get_mc_reference_features(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot)
+            # --- 修正箇所：専用関数で安全にカンペを抽出 ---
+            ref_features_cat_dict = get_cf_reference_features(
+                encoder, wav_filter, cf_modules, args.train_dataset_dir, class_names, images.device, args.train_ref_shot
+            )
             
             features_cat = []
-            
             for l in range(args.feature_levels):
                 test_lf, test_hf = wav_filter.get_LF_HF(features_raw[l])
                 test_lf, test_hf = cf_modules[l](test_lf, test_hf)
                 features_cat.append(torch.cat([test_lf, test_hf], dim=1))
                 
-            ref_features_cat_dict = {}
-            for c_name, refs_tuple in ref_features_raw.items():
-                refs_cat_list = []
-                for l in range(args.feature_levels):
-                    ref_l = refs_tuple[l]
-                    r_lf, r_hf = wav_filter.get_LF_HF(ref_l)
-                    r_lf, r_hf = cf_modules[l](r_lf, r_hf)
-                    refs_cat_list.append(torch.cat([r_lf, r_hf], dim=1))
-                ref_features_cat_dict[c_name] = tuple(refs_cat_list)
-            
             mfeatures = get_mc_matched_ref_features(features_cat, class_names, ref_features_cat_dict)
             rfeatures = get_residual_features(features_cat, mfeatures, pos_flag=True)
+            # ----------------------------------------------
 
             lvl_masks = []
             for l in range(args.feature_levels):
