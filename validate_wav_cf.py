@@ -1,3 +1,4 @@
+# validate_wav1_cf.py
 import warnings
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter
@@ -7,7 +8,6 @@ import torch.nn.functional as F
 
 from models.modules import get_position_encoding
 from models.utils import get_logp
-# utilsから get_matched_ref_features をインポート
 from utils import get_residual_features, get_matched_ref_features
 from utils import calculate_metrics
 from losses.utils import get_logp_a
@@ -19,6 +19,13 @@ def validate(args, encoder, constraintor, wav_filter, cf_modules, estimators, te
     cf_modules.eval()
     for estimator in estimators:  
         estimator.eval()
+        
+    ref_features_cat = []
+    with torch.no_grad():
+        for l in range(args.feature_levels):
+            ref_lf, ref_hf = wav_filter.get_LF_HF(ref_features[l])
+            ref_lf, ref_hf = cf_modules[l](ref_lf, ref_hf)
+            ref_features_cat.append(torch.cat([ref_lf, ref_hf], dim=1))
     
     label_list, gt_mask_list = [], []
     logps1_list = [list() for _ in range(args.feature_levels)]
@@ -39,31 +46,15 @@ def validate(args, encoder, constraintor, wav_filter, cf_modules, estimators, te
         
         with torch.no_grad():
             features_raw = encoder(image)
-            
             features_cat = []
-            ref_features_cat = []
             
-            # --- 推論時の アイデア1 ＋ CFモジュール 処理 ---
             for l in range(args.feature_levels):
                 test_lf, test_hf = wav_filter.get_LF_HF(features_raw[l])
-                
-                # カンペ側もLFとHFを分離
-                ref_lf, ref_hf = wav_filter.get_LF_HF(ref_features[l])
-                
-                # CFモジュールを通す
                 test_lf, test_hf = cf_modules[l](test_lf, test_hf)
-                ref_lf, ref_hf = cf_modules[l](ref_lf, ref_hf)
-                
-                # チャネル方向に連結
                 features_cat.append(torch.cat([test_lf, test_hf], dim=1))
-                ref_features_cat.append(torch.cat([ref_lf, ref_hf], dim=1))
             
-            # 2倍次元のテンソル同士でマッチング
             mfeatures_cat = get_matched_ref_features(features_cat, ref_features_cat)
-            
-            # 残差を計算
             rfeatures = get_residual_features(features_cat, mfeatures_cat, pos_flag=True)
-            # --------------------------------------
             
             rfeatures = constraintor(*rfeatures)
         
