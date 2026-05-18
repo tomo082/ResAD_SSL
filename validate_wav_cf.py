@@ -1,4 +1,3 @@
-# validate_wav1_cf.py
 import warnings
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter
@@ -21,11 +20,31 @@ def validate(args, encoder, constraintor, wav_filter, cf_modules, estimators, te
         estimator.eval()
         
     ref_features_cat = []
+    
+    # --- 修正箇所: ダミー画像を使って(H, W)を逆算し、2次元カンペを4次元に復元 ---
     with torch.no_grad():
+        dummy_img = torch.zeros(1, 3, 224, 224).to(device)
+        dummy_feats = encoder(dummy_img)
+        
         for l in range(args.feature_levels):
-            ref_lf, ref_hf = wav_filter.get_LF_HF(ref_features[l])
+            # エンコーダの出力から正しい解像度(H, W)を取得
+            _, C, H, W = dummy_feats[l].shape
+            
+            # .npyから読み込んだ2次元テンソル(K*H*W, C)を、元の4次元(K, C, H, W)に再構築
+            K = ref_features[l].shape[0] // (H * W)
+            ref_4d = ref_features[l].view(K, H, W, C).permute(0, 3, 1, 2)
+            
+            # 4次元テンソルに対してフィルタとCFを適用
+            ref_lf, ref_hf = wav_filter.get_LF_HF(ref_4d)
             ref_lf, ref_hf = cf_modules[l](ref_lf, ref_hf)
-            ref_features_cat.append(torch.cat([ref_lf, ref_hf], dim=1))
+            
+            # 連結して再びマッチング用の平坦な2次元に戻す
+            cat_4d = torch.cat([ref_lf, ref_hf], dim=1)
+            bs, c, h, w = cat_4d.shape
+            cat_2d = cat_4d.permute(0, 2, 3, 1).reshape(-1, c)
+            
+            ref_features_cat.append(cat_2d)
+    # --------------------------------------------------------------------------
     
     label_list, gt_mask_list = [], []
     logps1_list = [list() for _ in range(args.feature_levels)]
@@ -51,6 +70,8 @@ def validate(args, encoder, constraintor, wav_filter, cf_modules, estimators, te
             for l in range(args.feature_levels):
                 test_lf, test_hf = wav_filter.get_LF_HF(features_raw[l])
                 test_lf, test_hf = cf_modules[l](test_lf, test_hf)
+                
+                # テスト画像側は空間を維持したまま連結してマッチングに送る
                 features_cat.append(torch.cat([test_lf, test_hf], dim=1))
             
             mfeatures_cat = get_matched_ref_features(features_cat, ref_features_cat)
