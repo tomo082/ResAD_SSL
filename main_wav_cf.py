@@ -1,3 +1,4 @@
+# main_wav1_cf.py
 import os
 import warnings
 import argparse
@@ -10,7 +11,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from train import train
-from validate_wav_cf import validate
+from validate_wav1_cf import validate
 from datasets.mvtec import MVTEC, MVTECANO
 from datasets.visa import VISA, VISAANO
 from datasets.btad import BTAD
@@ -39,9 +40,6 @@ SETTINGS = {'visa_to_mvtec': VISA_TO_MVTEC, 'mvtec_to_visa': MVTEC_TO_VISA,
             'mvtec_to_mpdd': MVTEC_TO_MPDD, 'mvtec_to_mvtecloco': MVTEC_TO_MVTECLOCO,
             'mvtec_to_brats': MVTEC_TO_BRATS,'mvtec_to_mvtec':MVTEC_TO_MVTEC, 'visa_to_visa':VISA_TO_VISA, 'capsules_to_capsules': CAPSULES_TO_CAPSULES}
 
-# ==========================================
-# 1. Haar Wavelet Filter (LFとHFの2成分に分離)
-# ==========================================
 class HaarWaveletFilter2Component(nn.Module):
     def __init__(self):
         super().__init__()
@@ -64,7 +62,6 @@ class HaarWaveletFilter2Component(nn.Module):
         
         lf = F.conv_transpose2d(ll, self.k_ll.expand(C, 1, 2, 2), stride=2, groups=C)
         
-        # 高周波成分は3方向のエッジをすべて足し合わせて1つのテンソルにする
         hf_hl = F.conv_transpose2d(hl, self.k_hl.expand(C, 1, 2, 2), stride=2, groups=C)
         hf_lh = F.conv_transpose2d(lh, self.k_lh.expand(C, 1, 2, 2), stride=2, groups=C)
         hf_hh = F.conv_transpose2d(hh, self.k_hh.expand(C, 1, 2, 2), stride=2, groups=C)
@@ -72,13 +69,9 @@ class HaarWaveletFilter2Component(nn.Module):
         
         return lf, hf
 
-# ==========================================
-# 2. Cross Frequency (CF) Module
-# ==========================================
 class CrossFrequencyModule(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
-        # 論文に沿って LF と HF を結合してから畳み込む
         self.conv_block = nn.Sequential(
             nn.Conv2d(in_channels * 2, in_channels * 2, kernel_size=3, padding=1),
             nn.Conv2d(in_channels * 2, in_channels * 2, kernel_size=3, padding=1),
@@ -86,13 +79,9 @@ class CrossFrequencyModule(nn.Module):
         )
 
     def forward(self, lf, hf):
-        # 1. 結合 (Concat)
         x = torch.cat([lf, hf], dim=1)
-        # 2. 畳み込み
         x_out = self.conv_block(x)
-        # 3. 分割 (Split)
         lf_out, hf_out = torch.chunk(x_out, 2, dim=1)
-        # 4. 残差加算 (Residual Add)
         lf_refined = lf + lf_out
         hf_refined = hf + hf_out
         return lf_refined, hf_refined
@@ -100,7 +89,6 @@ class CrossFrequencyModule(nn.Module):
 def main(args):
     CLASSES = SETTINGS[args.setting]
     
-    # データセットの初期化 (省略せずそのまま)
     if args.classes == 'capsules': 
         train_dataset1 = CAPSULES(args.train_dataset_dir, class_name=CLASSES['seen'], train=True, normalize="w50", img_size=224, crp_size=224, msk_size=224, msk_crp_size=224)
         train_loader1 = DataLoader(train_dataset1, batch_size=args.batch_size, shuffle=True, num_workers=8, drop_last=True)
@@ -124,19 +112,13 @@ def main(args):
         encoder = timm.create_model('tf_efficientnet_b6', features_only=True, out_indices=(1, 2, 3), pretrained=True).eval().to(args.device)
         feat_dims = encoder.feature_info.channels()
         
-    # 特徴量を LF と HF に分けて連結するため、後段に渡す次元数は元の 2 倍になります
     feat_dims_cat = [dim * 2 for dim in feat_dims]
         
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
     wav_filter = HaarWaveletFilter2Component().to(args.device)
-    
-    # 各階層（Layer1, 2, 3）用の CFモジュール を作成
     cf_modules = nn.ModuleList([CrossFrequencyModule(dim) for dim in feat_dims]).to(args.device)
     
-    # 後段ネットワークは 2倍の次元（feat_dims_cat）で初期化
     constraintor = MultiScaleConv(feat_dims_cat).to(args.device)
-    
-    # オプティマイザに CFモジュール のパラメータも追加
     params_c = list(constraintor.parameters()) + list(cf_modules.parameters())
     optimizer0 = torch.optim.Adam(params_c, lr=args.lr, weight_decay=0.0005)
     scheduler0 = torch.optim.lr_scheduler.MultiStepLR(optimizer0, milestones=[70, 90], gamma=0.1)
@@ -169,44 +151,27 @@ def main(args):
             with torch.no_grad():
                 features_raw = encoder(images)
             
-            # 生のカンペを取得
             ref_features_raw = get_mc_reference_features(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot)
             
             features_cat = []
-            ref_features_cat = []
             
-            # --- アイデア1 ＋ CFモジュール 処理 ---
             for l in range(args.feature_levels):
-                # 1. テスト画像とカンペを LF と HF に分離
                 test_lf, test_hf = wav_filter.get_LF_HF(features_raw[l])
-                
-                # リスト内のカンペ全てに対して分離処理を行う
-                ref_lfs, ref_hfs = [], []
-                for ref_raw in ref_features_raw[l]:
-                    r_lf, r_hf = wav_filter.get_LF_HF(ref_raw.unsqueeze(0))
-                    ref_lfs.append(r_lf.squeeze(0))
-                    ref_hfs.append(r_hf.squeeze(0))
-                ref_lf = torch.stack(ref_lfs)
-                ref_hf = torch.stack(ref_hfs)
-                
-                # 2. CFモジュールを通す (周波数間の相互作用)
                 test_lf, test_hf = cf_modules[l](test_lf, test_hf)
-                
-                B_ref, C_ref, H_ref, W_ref = ref_lf.shape
-                # バッチ処理としてCFモジュールに通す
-                ref_lf, ref_hf = cf_modules[l](ref_lf, ref_hf)
-                
-                # 3. チャネル方向に連結 (Concat) して2倍の次元にする
                 features_cat.append(torch.cat([test_lf, test_hf], dim=1))
                 
-                # カンペ側も連結し、元のカンペリスト構造に戻す
-                ref_cat = torch.cat([ref_lf, ref_hf], dim=1)
-                ref_features_cat.append(ref_cat)
+            ref_features_cat_dict = {}
+            for c_name, refs_tuple in ref_features_raw.items():
+                refs_cat_list = []
+                for l in range(args.feature_levels):
+                    ref_l = refs_tuple[l]
+                    r_lf, r_hf = wav_filter.get_LF_HF(ref_l)
+                    r_lf, r_hf = cf_modules[l](r_lf, r_hf)
+                    refs_cat_list.append(torch.cat([r_lf, r_hf], dim=1))
+                ref_features_cat_dict[c_name] = tuple(refs_cat_list)
             
-            # 連結された特徴量を使ってカンペとマッチング
-            mfeatures = get_mc_matched_ref_features(features_cat, class_names, ref_features_cat)
+            mfeatures = get_mc_matched_ref_features(features_cat, class_names, ref_features_cat_dict)
             rfeatures = get_residual_features(features_cat, mfeatures, pos_flag=True)
-            # --------------------------------------
 
             lvl_masks = []
             for l in range(args.feature_levels):
@@ -246,10 +211,8 @@ def main(args):
         progress_bar.close()
         print(f"Epoch[{epoch}/{args.epochs}]: train_loss: {train_loss_total / total_num}")
         
-        # --- 評価フェーズ ---
         if (epoch + 1) % args.eval_freq == 0:
             s1_res, s2_res, s_res = [], [], []
-            # テスト用のカンペも、ウェーブレット変換をしていない「元のResADの生特徴量」をロードします
             test_ref_features = load_mc_reference_features(args.test_ref_feature_dir, CLASSES['unseen'], args.device, args.num_ref_shot)
             
             for class_name in CLASSES['unseen']:
@@ -265,7 +228,6 @@ def main(args):
                 
                 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=8, drop_last=False)
                 
-                # CFモジュールを評価関数に渡す
                 metrics = validate(args, encoder, constraintor, wav_filter, cf_modules, estimators, test_loader, test_ref_features[class_name], args.device, class_name)
                 
                 img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = metrics['scores']
@@ -311,7 +273,6 @@ if __name__ == "__main__":
     parser.add_argument('--classes', type=str, default="none")
     parser.add_argument('--train_dataset_dir', type=str, default="")
     parser.add_argument('--test_dataset_dir', type=str, default="")
-    # ★ ここは CNN で抽出したオリジナルの生特徴量カンペを指定します
     parser.add_argument('--test_ref_feature_dir', type=str, default="./ref_features/w50/mvtec_4shot")
     parser.add_argument('--bgadweight_dir', type=str, default="none")
     parser.add_argument('--batch_size', type=int, default=32)
@@ -323,7 +284,6 @@ if __name__ == "__main__":
     parser.add_argument('--backbone', type=str, default="wide_resnet50_2")
     parser.add_argument('--rank', type=int, default="0")    
     
-    # flow parameters
     parser.add_argument('--flow_arch', type=str, default='conditional_flow_model')
     parser.add_argument('--feature_levels', default=3, type=int)
     parser.add_argument('--coupling_layers', type=int, default=10)
