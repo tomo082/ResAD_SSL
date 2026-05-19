@@ -4,10 +4,11 @@ import argparse
 from tqdm import tqdm
 import numpy as np
 import torch
+import torch.nn as nn
 import timm
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-import torch.nn as nn
+
 from train import train
 from validate_global import validate
 from datasets.mvtec import MVTEC, MVTECANO
@@ -20,7 +21,6 @@ from datasets.brats import BRATS
 from datasets.capsules import CAPSULES, CAPSULESANO
 
 from models.fc_flow import load_flow_model
-from models.vq import MultiScaleVQ
 from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features
 from utils import BoundaryAverager
 from losses.loss import calculate_log_barrier_bi_occ_loss
@@ -35,28 +35,19 @@ TOTAL_SHOT = 4
 FIRST_STAGE_EPOCH = 10
 SETTINGS = {'visa_to_mvtec': VISA_TO_MVTEC, 'mvtec_to_visa': MVTEC_TO_VISA,
             'mvtec_to_btad': MVTEC_TO_BTAD, 'mvtec_to_mvtec3d': MVTEC_TO_MVTEC3D,
-            'mvtec_to_mpdd': MVTEC_TO_MPDD, 'mvtec_to_mvtecloco': MVTECLOCO,
+            'mvtec_to_mpdd': MVTEC_TO_MPDD, 'mvtec_to_mvtecloco': MVTEC_TO_MVTECLOCO,
             'mvtec_to_brats': MVTEC_TO_BRATS,'mvtec_to_mvtec':MVTEC_TO_MVTEC, 'visa_to_visa':VISA_TO_VISA, 'capsules_to_capsules': CAPSULES_TO_CAPSULES}
 
-# ==========================================
-# アイデア3: Global Context Constraintor（情報ボトルネック内蔵）
-# ==========================================
 class GlobalContextConstraintor(nn.Module):
-    def __init__(self, feat_dims, num_heads=4, num_layers=1, bottleneck_ratio=4):
+    def __init__(self, feat_dims, num_heads=4, num_layers=1):
         super().__init__()
         self.num_levels = len(feat_dims)
         self.local_convs = nn.ModuleList()
         self.transformers = nn.ModuleList()
         
-        # 丸暗記（恒等写像）を防止するための情報ボトルネック
-        self.proj_down = nn.ModuleList()
-        self.proj_up = nn.ModuleList()
-        
-        # Layer 1（浅い層）はテクスチャ重視のためCNNのみ、Layer 2,3（深い層）は論理構造重視のためTransformerを適用
         self.apply_transformer = [l > 0 for l in range(self.num_levels)]
 
         for i, dim in enumerate(feat_dims):
-            # 1. 局所ノイズ平滑化用CNN
             conv = nn.Sequential(
                 nn.Conv2d(dim, dim, kernel_size=3, padding=1, bias=False),
                 nn.BatchNorm2d(dim),
@@ -67,17 +58,12 @@ class GlobalContextConstraintor(nn.Module):
             )
             self.local_convs.append(conv)
 
-            # 2. 大域論理検証用Transformer + ボトルネック
             if self.apply_transformer[i]:
-                compressed_dim = max(dim // bottleneck_ratio, 16) 
-                self.proj_down.append(nn.Linear(dim, compressed_dim))
-                self.proj_up.append(nn.Linear(compressed_dim, dim))
-                
-                heads = num_heads if compressed_dim % num_heads == 0 else 1
+                heads = num_heads if dim % num_heads == 0 else 1
                 encoder_layer = nn.TransformerEncoderLayer(
-                    d_model=compressed_dim, 
+                    d_model=dim, 
                     nhead=heads, 
-                    dim_feedforward=compressed_dim * 2,
+                    dim_feedforward=dim * 2,
                     activation='relu',
                     batch_first=True,
                     dropout=0.1
@@ -85,8 +71,6 @@ class GlobalContextConstraintor(nn.Module):
                 self.transformers.append(nn.TransformerEncoder(encoder_layer, num_layers=num_layers))
             else:
                 self.transformers.append(nn.Identity())
-                self.proj_down.append(nn.Identity())
-                self.proj_up.append(nn.Identity())
 
     def forward(self, *features):
         out_features = []
@@ -94,27 +78,18 @@ class GlobalContextConstraintor(nn.Module):
             x = features[i]
             B, C, H, W = x.shape
             
-            # CNNによる局所的な平滑化
             x_local = self.local_convs[i](x) + x
             
             if self.apply_transformer[i]:
-                # 2D Sinusoidal 位置エンコーディング
                 pos_embed = self.get_2d_sincos_pos_embed(C, H, W, x.device)
                 pos_embed = pos_embed.unsqueeze(0).expand(B, -1, -1)
                 
-                x_flat = x_local.view(B, C, -1).permute(0, 2, 1) # (B, H*W, C)
+                x_flat = x_local.view(B, C, -1).permute(0, 2, 1)
                 x_flat = x_flat + pos_embed
                 
-                # 情報ボトルネックによる次元圧縮
-                x_compressed = self.proj_down[i](x_flat)
+                x_global = self.transformers[i](x_flat)
                 
-                # Transformerによる大域コンテキスト補正
-                x_global = self.transformers[i](x_compressed)
-                
-                # 次元復元と空間次元への再構成
-                x_restored = self.proj_up[i](x_global)
-                x_out = x_restored.permute(0, 2, 1).view(B, C, H, W)
-                
+                x_out = x_global.permute(0, 2, 1).view(B, C, H, W)
                 out_features.append(x_out + x_local)
             else:
                 out_features.append(x_local)
@@ -125,7 +100,9 @@ class GlobalContextConstraintor(nn.Module):
         grid_h = torch.arange(grid_size_h, dtype=torch.float32, device=device)
         grid_w = torch.arange(grid_size_w, dtype=torch.float32, device=device)
         grid_h, grid_w = torch.meshgrid(grid_h, grid_w, indexing='ij')
-        grid_h, grid_w = grid_h.reshape(-1), grid_w.reshape(-1)
+
+        grid_h = grid_h.reshape(-1)
+        grid_w = grid_w.reshape(-1)
 
         emb_h = self.get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid_h)
         emb_w = self.get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid_w)
@@ -139,8 +116,12 @@ class GlobalContextConstraintor(nn.Module):
         omega = torch.arange(embed_dim // 2, dtype=torch.float32, device=pos.device)
         omega /= (embed_dim / 2.)
         omega = 1. / (10000 ** omega)
+
         out = torch.einsum('m,d->md', pos, omega)
-        emb = torch.cat([torch.sin(out), torch.cos(out)], dim=1)
+        emb_sin = torch.sin(out)
+        emb_cos = torch.cos(out)
+
+        emb = torch.cat([emb_sin, emb_cos], dim=1)
         if embed_dim % 2 != 0:
             emb = F.pad(emb, (0, 1))
         return emb
@@ -173,13 +154,8 @@ def main(args):
         
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
     
-    # 元の VQモジュール を組み戻し
-    vq_ops = MultiScaleVQ(num_embeddings=args.num_embeddings, channels=feat_dims).to(args.device)
-    optimizer_vq = torch.optim.Adam(vq_ops.parameters(), lr=args.lr, weight_decay=0.0005)
-    scheduler_vq = torch.optim.lr_scheduler.MultiStepLR(optimizer_vq, milestones=[70, 90], gamma=0.1)
-    
-    # 新提案の大域補正モジュール
     constraintor = GlobalContextConstraintor(feat_dims).to(args.device)
+    
     optimizer0 = torch.optim.Adam(constraintor.parameters(), lr=args.lr, weight_decay=0.0005)
     scheduler0 = torch.optim.lr_scheduler.MultiStepLR(optimizer0, milestones=[70, 90], gamma=0.1)
     
@@ -194,7 +170,6 @@ def main(args):
     N_batch = 8192
     
     for epoch in range(args.epochs):
-        vq_ops.train()
         constraintor.train()
         for estimator in estimators: estimator.train()
             
@@ -212,7 +187,9 @@ def main(args):
                 features = encoder(images)
             
             ref_features = get_mc_reference_features(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot)
+            
             mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
+            
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
 
             lvl_masks = []
@@ -222,15 +199,6 @@ def main(args):
                 lvl_masks.append(m)
             rfeatures_t = [rfeature.detach().clone() for rfeature in rfeatures]
             
-            # --- VQモジュールの最適化 (元の処理) ---
-            loss_vq = vq_ops(rfeatures, lvl_masks, train=True)
-            train_loss_total += loss_vq.item()
-            total_num += 1
-            optimizer_vq.zero_grad()
-            loss_vq.backward()
-            optimizer_vq.step()
-            
-            # --- 新Constraintor (大域ハイブリッド) の最適化 ---
             rfeatures = constraintor(*rfeatures)
             loss = 0
             for l in range(args.feature_levels):  
@@ -256,7 +224,6 @@ def main(args):
             train_loss_total += loss
             total_num += num
         
-        scheduler_vq.step()
         scheduler0.step()
         scheduler1.step()
                
@@ -280,8 +247,7 @@ def main(args):
                 
                 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=8, drop_last=False)
                 
-                # validateに関数を正しく引き渡す
-                metrics = validate(args, encoder, vq_ops, constraintor, estimators, test_loader, test_ref_features[class_name], args.device, class_name)
+                metrics = validate(args, encoder, constraintor, estimators, test_loader, test_ref_features[class_name], args.device, class_name)
                 
                 img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = metrics['scores']
                 print("Epoch: {}, Class Name: {}, Image AUC | AP | F1_Score: {} | {} | {}, Pixel AUC | AP | F1_Score | AUPRO: {} | {} | {} | {}".format(
@@ -303,8 +269,7 @@ def main(args):
             if img_auc > best_img_auc:
                 os.makedirs(args.checkpoint_path, exist_ok=True)
                 best_img_auc = img_auc
-                state_dict = {'vq_ops': vq_ops.state_dict(),
-                              'constraintor': constraintor.state_dict(),
+                state_dict = {'constraintor': constraintor.state_dict(),
                               'estimators': [estimator.state_dict() for estimator in estimators]}
                 torch.save(state_dict, os.path.join(args.checkpoint_path, f'{args.setting}_epoch_{epoch}_checkpoints.pth'))
 
@@ -346,10 +311,10 @@ if __name__ == "__main__":
     parser.add_argument('--margin_tau', type=float, default=0.1)
     parser.add_argument('--bgspp_lambda', type=float, default=1)
     parser.add_argument('--fdm_alpha', type=float, default=0.4) 
-    parser.add_argument('--num_embeddings', type=int, default=1536)
     parser.add_argument("--train_ref_shot", type=int, default=4)
     parser.add_argument("--num_ref_shot", type=int, default=4)
     
     args = parser.parse_args()
     init_seeds(42)
-    main(args)
+    main(args)s
+            
