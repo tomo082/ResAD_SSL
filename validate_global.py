@@ -29,10 +29,8 @@ def get_matched_ref_features(features, ref_features):
         matched_ref_features.append(index_feats)
     return matched_ref_features
 
-# 引数に vq_ops を追加
-def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_features, device, class_name):
+def validate(args, encoder, constraintor, estimators, test_loader, ref_features, device, class_name):
     constraintor.eval()
-    vq_ops.eval()
     for estimator in estimators:  
         estimator.eval()
     
@@ -55,13 +53,11 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
         
         with torch.no_grad():
             features = encoder(image)
+            
             mfeatures = get_matched_ref_features(features, ref_features)
+            
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             
-            # --- 元の評価処理: 残差を量子化コードブックのエントリに置換 ---
-            rfeatures = vq_ops(rfeatures, train=False)
-            
-            # 補正モジュール（大域ハイブリッド）に通過
             rfeatures = constraintor(*rfeatures)
         
             for l in range(args.feature_levels):
