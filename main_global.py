@@ -316,5 +316,5 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     init_seeds(42)
-    main(args)s
+    main(args)
             
