@@ -54,7 +54,6 @@ def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, r
     ref_lf_cat = []
     ref_hf_cat = []
     
-    # 事前計算: 既存の未分離カンペ(.npy)を空間次元に復元してLFとHFに分離する
     with torch.no_grad():
         dummy_img = torch.zeros(1, 3, 224, 224).to(device)
         dummy_feats = encoder(dummy_img)
@@ -96,7 +95,6 @@ def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, r
                 test_lf_list.append(lf)
                 test_hf_list.append(hf)
             
-            # 推論用の分割統治マッチング
             rfeatures = get_freq_matched_residuals_infer(
                 test_lf_list, test_hf_list, ref_lf_cat, ref_hf_cat, 
                 alpha=args.blend_alpha, pos_flag=True, device=device
@@ -109,8 +107,9 @@ def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, r
                 bs, dim, h, w = e.size()
                 e = e.permute(0, 2, 3, 1).reshape(-1, dim)
                 
-                pos_embed = get_position_encoding(dim, h, w).to(device).unsqueeze(0).repeat(bs, 1, 1, 1)
-                pos_embed = pos_embed.permute(0, 2, 3, 1).reshape(-1, dim)
+                # ★ 修正ポイント: estimatorの条件付けには一律で args.pos_embed_dim を使用する
+                pos_embed = get_position_encoding(args.pos_embed_dim, h, w).to(device).unsqueeze(0).repeat(bs, 1, 1, 1)
+                pos_embed = pos_embed.permute(0, 2, 3, 1).reshape(-1, args.pos_embed_dim)
                 estimator = estimators[l]
 
                 if args.flow_arch == 'flow_model':
