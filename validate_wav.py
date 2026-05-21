@@ -9,13 +9,13 @@ from models.modules import get_position_encoding
 from models.utils import get_logp
 from utils import get_residual_features, get_matched_ref_features
 from utils import calculate_metrics
+from residual_wavelet import apply_residual_wavelet_filter
 from losses.utils import get_logp_a
 
 warnings.filterwarnings('ignore')
 
-def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, ref_features, device, class_name):
+def validate(args, encoder, constraintor, estimators, test_loader, ref_features, device, class_name):
     constraintor.eval()
-    wav_filter.eval()
     for estimator in estimators:  
         estimator.eval()
     
@@ -38,12 +38,10 @@ def validate(args, encoder, constraintor, wav_filter, estimators, test_loader, r
         
         with torch.no_grad():
             features = encoder(image)
-            
-            # --- 追加: テスト画像をウェーブレット変換 (Pre-filter) ---
-            features = [wav_filter(f) for f in features]
-            
             mfeatures = get_matched_ref_features(features, ref_features)
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
+            if args.use_wav and args.wav_on == 'residual':
+                rfeatures = apply_residual_wavelet_filter(rfeatures, wave=args.wave, hf_weight=args.hf_weight)
             
             rfeatures = constraintor(*rfeatures)
         

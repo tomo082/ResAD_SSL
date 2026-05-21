@@ -4,7 +4,6 @@ import argparse
 from tqdm import tqdm
 import numpy as np
 import torch
-import torch.nn as nn
 import timm
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -22,8 +21,9 @@ from datasets.capsules import CAPSULES, CAPSULESANO
 
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
-from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features_wav
+from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features
 from utils import BoundaryAverager
+from residual_wavelet import apply_residual_wavelet_filter, residual_wavelet_shape_test
 from losses.loss import calculate_log_barrier_bi_occ_loss
 from classes import VISA_TO_MVTEC, MVTEC_TO_VISA, MVTEC_TO_BTAD, MVTEC_TO_MVTEC3D
 from classes import MVTEC_TO_MPDD, MVTEC_TO_MVTECLOCO, MVTEC_TO_BRATS
@@ -38,44 +38,6 @@ SETTINGS = {'visa_to_mvtec': VISA_TO_MVTEC, 'mvtec_to_visa': MVTEC_TO_VISA,
             'mvtec_to_btad': MVTEC_TO_BTAD, 'mvtec_to_mvtec3d': MVTEC_TO_MVTEC3D,
             'mvtec_to_mpdd': MVTEC_TO_MPDD, 'mvtec_to_mvtecloco': MVTEC_TO_MVTECLOCO,
             'mvtec_to_brats': MVTEC_TO_BRATS,'mvtec_to_mvtec':MVTEC_TO_MVTEC, 'visa_to_visa':VISA_TO_VISA, 'capsules_to_capsules': CAPSULES_TO_CAPSULES}
-
-# ==========================================
-# Haar Wavelet Filter
-# ==========================================
-class HaarWaveletFilter(nn.Module):
-    def __init__(self, low_freq_weight=0.1, high_freq_weight=1.2):
-        super().__init__()
-        self.lf_w = low_freq_weight
-        self.hf_w = high_freq_weight
-        
-        ll = torch.tensor([[0.5, 0.5], [0.5, 0.5]])
-        hl = torch.tensor([[-0.5, -0.5], [0.5, 0.5]])
-        lh = torch.tensor([[-0.5, 0.5], [-0.5, 0.5]])
-        hh = torch.tensor([[0.5, -0.5], [-0.5, 0.5]])
-        
-        self.register_buffer('k_ll', ll.view(1, 1, 2, 2))
-        self.register_buffer('k_hl', hl.view(1, 1, 2, 2))
-        self.register_buffer('k_lh', lh.view(1, 1, 2, 2))
-        self.register_buffer('k_hh', hh.view(1, 1, 2, 2))
-
-    def forward(self, x):
-        B, C, H, W = x.shape
-        ll = F.conv2d(x, self.k_ll.expand(C, 1, 2, 2), stride=2, groups=C)
-        hl = F.conv2d(x, self.k_hl.expand(C, 1, 2, 2), stride=2, groups=C)
-        lh = F.conv2d(x, self.k_lh.expand(C, 1, 2, 2), stride=2, groups=C)
-        hh = F.conv2d(x, self.k_hh.expand(C, 1, 2, 2), stride=2, groups=C)
-        
-        ll = ll * self.lf_w
-        hl = hl * self.hf_w
-        lh = lh * self.hf_w
-        hh = hh * self.hf_w
-        
-        out = F.conv_transpose2d(ll, self.k_ll.expand(C, 1, 2, 2), stride=2, groups=C) + \
-              F.conv_transpose2d(hl, self.k_hl.expand(C, 1, 2, 2), stride=2, groups=C) + \
-              F.conv_transpose2d(lh, self.k_lh.expand(C, 1, 2, 2), stride=2, groups=C) + \
-              F.conv_transpose2d(hh, self.k_hh.expand(C, 1, 2, 2), stride=2, groups=C)
-        return out
-
 
 def main(args):
     if args.setting in SETTINGS.keys():
@@ -136,10 +98,6 @@ def main(args):
         
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
     
-    # ウェーブレットフィルタの初期化
-    wav_filter = HaarWaveletFilter(low_freq_weight=args.lf_weight, high_freq_weight=args.hf_weight).to(args.device)
-    wav_filter.eval()
-    
     # constraintorの初期化 (元のmain.pyに準拠)
     constraintor = MultiScaleConv(feat_dims).to(args.device)
     optimizer0 = torch.optim.Adam(constraintor.parameters(), lr=args.lr, weight_decay=0.0005)
@@ -180,13 +138,12 @@ def main(args):
             
             with torch.no_grad():
                 features = encoder(images)
-                # --- ウェーブレット変換 (Pre-filter) ---
-                features = [wav_filter(f) for f in features]
             
-            # --- utilsの関数内で自動変換させる ---
-            ref_features = get_mc_reference_features_wav(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot, wav_filter=wav_filter)
+            ref_features = get_mc_reference_features(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot)
             mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
+            if args.use_wav and args.wav_on == 'residual':
+                rfeatures = apply_residual_wavelet_filter(rfeatures, wave=args.wave, hf_weight=args.hf_weight)
             
             lvl_masks = []
             for l in range(args.feature_levels):
@@ -254,8 +211,7 @@ def main(args):
                 
                 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=8, drop_last=False)
                 
-                # validate関数に wav_filter を渡す
-                metrics = validate(args, encoder, constraintor, wav_filter, estimators, test_loader, test_ref_features[class_name], args.device, class_name)
+                metrics = validate(args, encoder, constraintor, estimators, test_loader, test_ref_features[class_name], args.device, class_name)
                 
                 img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = metrics['scores']
                 
@@ -308,7 +264,7 @@ if __name__ == "__main__":
     parser.add_argument('--classes', type=str, default="none")
     parser.add_argument('--train_dataset_dir', type=str, default="")
     parser.add_argument('--test_dataset_dir', type=str, default="")
-    parser.add_argument('--test_ref_feature_dir', type=str, default="./ref_features/w50/mvtec_4shot_wav")
+    parser.add_argument('--test_ref_feature_dir', type=str, default="./ref_features/w50/mvtec_4shot")
     parser.add_argument('--bgadweight_dir', type=str, default="none")
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--lr', type=float, default=1e-5)
@@ -334,11 +290,18 @@ if __name__ == "__main__":
     parser.add_argument("--train_ref_shot", type=int, default=4)
     parser.add_argument("--num_ref_shot", type=int, default=4)
     
-    # --- 追加: ウェーブレット用パラメータ ---
-    parser.add_argument("--lf_weight", type=float, default=0.1)
-    parser.add_argument("--hf_weight", type=float, default=1.2)
+    parser.add_argument("--use_wav", action="store_true")
+    parser.add_argument("--wav_on", type=str, default="residual", choices=["residual"])
+    parser.add_argument("--wave", type=str, default="haar", choices=["haar"])
+    parser.add_argument("--hf_weight", type=float, default=1.0)
+    parser.add_argument("--wav_shape_test", action="store_true")
     
     args = parser.parse_args()
     init_seeds(42)
+    if args.wav_shape_test:
+        test_device = args.device if torch.cuda.is_available() and str(args.device).startswith("cuda") else "cpu"
+        residual_wavelet_shape_test(device=test_device)
+        print("Residual wavelet shape test passed.")
+        raise SystemExit(0)
     
     main(args)
