@@ -340,7 +340,8 @@ def calculate_metrics(scores, labels, gt_masks, pro=True, only_max_value=True):
     _, h, w = scores.shape
     size = h * w
     if only_max_value:
-        topks = [1]
+        #topks = [1]
+        topks = [int(size * 0.01)]
     else:
         topks = [int(size*p) for p in np.arange(0.01, 0.41, 0.01)]
         topks = [1, 100] + topks
