@@ -41,7 +41,14 @@ def validate(args, encoder, constraintor, estimators, test_loader, ref_features,
             mfeatures = get_matched_ref_features(features, ref_features)
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             if args.use_wav and args.wav_on == 'residual':
-                rfeatures = apply_residual_wavelet_filter(rfeatures, wave=args.wave, hf_weight=args.hf_weight)
+                rfeatures = apply_residual_wavelet_filter(
+                    rfeatures,
+                    wave=args.wave,
+                    hf_weight=args.hf_weight,
+                    wav_mode=args.wav_mode,
+                    ll_skip_alpha=args.ll_skip_alpha,
+                    hf_gate_beta=args.hf_gate_beta,
+                )
             
             rfeatures = constraintor(*rfeatures)
         

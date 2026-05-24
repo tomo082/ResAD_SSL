@@ -6,21 +6,37 @@ import torch.nn.functional as F
 
 
 def apply_residual_wavelet_filter(rfeatures: List[Tensor], wave: str = "haar",
-                                  hf_weight: float = 1.0) -> List[Tensor]:
+                                  hf_weight: float = 1.0,
+                                  wav_mode: str = "ll_hf",
+                                  ll_skip_alpha: float = 0.5,
+                                  hf_gate_beta: float = 1.0) -> List[Tensor]:
     """
     Apply a 1-level Haar DWT filter in residual space.
 
-    Each input/output feature keeps shape (B, C, H, W). The filtered residual is
-    LL_upsampled + hf_weight * sqrt(LH^2 + HL^2 + HH^2)_upsampled.
+    Each input/output feature keeps shape (B, C, H, W).
     """
     if wave != "haar":
         raise ValueError(f"Only Haar wavelet is supported, but got {wave}.")
-    return [_apply_haar_residual_filter(rfeature, hf_weight=hf_weight) for rfeature in rfeatures]
+    return [
+        _apply_haar_residual_filter(
+            rfeature,
+            hf_weight=hf_weight,
+            wav_mode=wav_mode,
+            ll_skip_alpha=ll_skip_alpha,
+            hf_gate_beta=hf_gate_beta,
+        )
+        for rfeature in rfeatures
+    ]
 
 
-def _apply_haar_residual_filter(x: Tensor, hf_weight: float = 1.0) -> Tensor:
+def _apply_haar_residual_filter(x: Tensor, hf_weight: float = 1.0,
+                                wav_mode: str = "ll_hf",
+                                ll_skip_alpha: float = 0.5,
+                                hf_gate_beta: float = 1.0) -> Tensor:
     if x.dim() != 4:
         raise ValueError(f"Residual feature must be 4D (B, C, H, W), but got {tuple(x.shape)}.")
+    if wav_mode not in {"ll_hf", "ll_only", "skip_ll", "hf_gate"}:
+        raise ValueError(f"Unsupported wav_mode: {wav_mode}.")
 
     B, C, H, W = x.shape
     pad_h = H % 2
@@ -39,7 +55,23 @@ def _apply_haar_residual_filter(x: Tensor, hf_weight: float = 1.0) -> Tensor:
     hf_energy = torch.sqrt(lh.pow(2) + hl.pow(2) + hh.pow(2) + 1e-12)
     ll = F.interpolate(ll, size=(H, W), mode="bilinear", align_corners=False)
     hf_energy = F.interpolate(hf_energy, size=(H, W), mode="bilinear", align_corners=False)
-    return ll + hf_weight * hf_energy
+
+    if wav_mode == "ll_hf":
+        return ll + hf_weight * hf_energy
+    if wav_mode == "ll_only":
+        return ll
+    if wav_mode == "skip_ll":
+        return ll_skip_alpha * x + (1.0 - ll_skip_alpha) * ll
+
+    hf_norm = _normalize_hf_energy(hf_energy)
+    gate = torch.sigmoid(hf_norm)
+    return ll * (1.0 + hf_gate_beta * gate)
+
+
+def _normalize_hf_energy(hf_energy: Tensor) -> Tensor:
+    mean = hf_energy.mean(dim=(-2, -1), keepdim=True)
+    std = hf_energy.std(dim=(-2, -1), keepdim=True, unbiased=False).clamp_min(1e-6)
+    return (hf_energy - mean) / std
 
 
 def _haar_kernels(device, dtype) -> Tensor:
@@ -61,7 +93,17 @@ def residual_wavelet_shape_test(device: str = "cpu") -> None:
         torch.randn(2, 16, 28, 28, device=device),
         torch.randn(2, 32, 15, 17, device=device),
     ]
-    filtered = apply_residual_wavelet_filter(rfeatures, wave="haar", hf_weight=1.0)
-    for before, after in zip(rfeatures, filtered):
-        if before.shape != after.shape:
-            raise AssertionError(f"Shape changed from {tuple(before.shape)} to {tuple(after.shape)}.")
+    for wav_mode in ("ll_hf", "ll_only", "skip_ll", "hf_gate"):
+        filtered = apply_residual_wavelet_filter(
+            rfeatures,
+            wave="haar",
+            hf_weight=1.0,
+            wav_mode=wav_mode,
+            ll_skip_alpha=0.5,
+            hf_gate_beta=1.0,
+        )
+        for before, after in zip(rfeatures, filtered):
+            if before.shape != after.shape:
+                raise AssertionError(
+                    f"{wav_mode} changed shape from {tuple(before.shape)} to {tuple(after.shape)}."
+                )
