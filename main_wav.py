@@ -143,7 +143,14 @@ def main(args):
             mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             if args.use_wav and args.wav_on == 'residual':
-                rfeatures = apply_residual_wavelet_filter(rfeatures, wave=args.wave, hf_weight=args.hf_weight)
+                rfeatures = apply_residual_wavelet_filter(
+                    rfeatures,
+                    wave=args.wave,
+                    hf_weight=args.hf_weight,
+                    wav_mode=args.wav_mode,
+                    ll_skip_alpha=args.ll_skip_alpha,
+                    hf_gate_beta=args.hf_gate_beta,
+                )
             
             lvl_masks = []
             for l in range(args.feature_levels):
@@ -294,6 +301,9 @@ if __name__ == "__main__":
     parser.add_argument("--wav_on", type=str, default="residual", choices=["residual"])
     parser.add_argument("--wave", type=str, default="haar", choices=["haar"])
     parser.add_argument("--hf_weight", type=float, default=1.0)
+    parser.add_argument("--wav_mode", type=str, default="ll_hf", choices=["ll_hf", "ll_only", "skip_ll", "hf_gate"])
+    parser.add_argument("--ll_skip_alpha", type=float, default=0.5)
+    parser.add_argument("--hf_gate_beta", type=float, default=1.0)
     parser.add_argument("--wav_shape_test", action="store_true")
     
     args = parser.parse_args()
