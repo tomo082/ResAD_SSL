@@ -23,6 +23,32 @@ def _skip_nonfinite_nf_loss(args, loss, level, epoch):
     return True
 
 
+def _debug_soft_codebook_forward(args, level, before, after):
+    if not getattr(args, "use_soft_codebook", False):
+        return
+    printed = getattr(args, "_soft_cb_debug_forward_levels", set())
+    if level in printed:
+        return
+    if not printed:
+        print("[SoftCodebook] enabled: True")
+    print(f"[SoftCodebook] level {level}: e_b shape {tuple(before.shape)}")
+    print(f"[SoftCodebook] level {level}: output shape {tuple(after.shape)}")
+    printed.add(level)
+    setattr(args, "_soft_cb_debug_forward_levels", printed)
+
+
+def _debug_soft_codebook_grad(args, soft_codebook, level):
+    if not getattr(args, "use_soft_codebook", False) or soft_codebook is None:
+        return
+    printed = getattr(args, "_soft_cb_debug_grad_levels", set())
+    if level in printed:
+        return
+    grad_exists = soft_codebook.adapters[level].codebook.weight.grad is not None
+    print(f"[SoftCodebook] level {level}: codebook.weight.grad exists after backward: {grad_exists}")
+    printed.add(level)
+    setattr(args, "_soft_cb_debug_grad_levels", printed)
+
+
 def train(args, rfeatures, decoders, optimizer, masks, boundary_ops, epoch, N_batch=4096, FIRST_STAGE_EPOCH=10, soft_codebook=None):
     train_loss_total, total_num = 0, 0
     for l in range(args.feature_levels):
@@ -44,6 +70,7 @@ def train(args, rfeatures, decoders, optimizer, masks, boundary_ops, epoch, N_ba
             p_b = pos_embed[perm[idx]]  
             e_b = e[perm[idx]]  
             m_b = masks_[perm[idx]]  
+            e_b_before_soft_cb = e_b
             e_b = apply_soft_codebook_flat_if_enabled(
                 args,
                 soft_codebook,
@@ -52,6 +79,7 @@ def train(args, rfeatures, decoders, optimizer, masks, boundary_ops, epoch, N_ba
                 epoch=epoch,
                 prefix="train_soft_codebook",
             )
+            _debug_soft_codebook_forward(args, l, e_b_before_soft_cb, e_b)
             
             if args.flow_arch == 'flow_model':
                 z, log_jac_det = decoder(e_b)  
@@ -68,6 +96,7 @@ def train(args, rfeatures, decoders, optimizer, masks, boundary_ops, epoch, N_ba
                     continue
                 optimizer.zero_grad()
                 loss.backward()
+                _debug_soft_codebook_grad(args, soft_codebook, l)
                 optimizer.step()
                 
                 b_n = get_normal_boundary(logps.detach(), m_b, pos_beta=args.pos_beta)
@@ -111,6 +140,7 @@ def train(args, rfeatures, decoders, optimizer, masks, boundary_ops, epoch, N_ba
                 if _skip_nonfinite_nf_loss(args, loss, l, epoch):
                     continue
                 loss.backward()
+                _debug_soft_codebook_grad(args, soft_codebook, l)
                 optimizer.step()
                 loss_item = loss.item()
                 if not math.isnan(loss_item):

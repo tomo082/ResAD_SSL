@@ -21,7 +21,7 @@ from datasets.capsules import CAPSULES, CAPSULESANO
 
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
-from models.soft_codebook import SoftCodebookAdapterList, apply_soft_codebook_if_enabled
+from models.soft_codebook import SoftCodebookAdapterList
 from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features
 from utils import BoundaryAverager
 from residual_wavelet import apply_residual_wavelet_filter, residual_wavelet_shape_test
@@ -51,6 +51,8 @@ def print_soft_codebook_config(args):
     print("[SoftCodebook] soft_cb_conf_gate:", args.soft_cb_conf_gate)
     print("[SoftCodebook] soft_cb_gate_threshold:", args.soft_cb_gate_threshold)
     print("[SoftCodebook] soft_cb_gate_temp:", args.soft_cb_gate_temp)
+    if args.use_soft_codebook and args.soft_cb_warmup_epochs > 0:
+        print("[SoftCodebook] gamma warmup: epoch 0 starts with gamma_eff=0.0")
 
 
 def main(args):
@@ -144,7 +146,6 @@ def main(args):
     
     best_img_auc = 0
     N_batch = 8192
-    soft_cb_debug_printed = False
     
     for epoch in range(args.epochs):
         constraintor.train()
@@ -214,17 +215,6 @@ def main(args):
             total_num += 1
             
             nf_features = [rfeature.detach().clone() for rfeature in rfeatures]
-            if args.use_soft_codebook and not soft_cb_debug_printed:
-                with torch.no_grad():
-                    apply_soft_codebook_if_enabled(
-                        args,
-                        soft_codebook,
-                        nf_features,
-                        epoch=epoch,
-                        debug_shapes=True,
-                        prefix="train_soft_codebook",
-                    )
-                soft_cb_debug_printed = True
             loss, num = train(
                 args,
                 nf_features,

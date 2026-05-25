@@ -60,6 +60,7 @@ class SoftCodebookAdapter(nn.Module):
     def _gamma_eff(self, epoch: Optional[int]) -> float:
         if epoch is None or self.warmup_epochs <= 0:
             return float(self.gamma)
+        # With warmup enabled, epoch 0 intentionally starts from gamma_eff=0.
         return float(self.gamma) * min(1.0, float(epoch) / float(self.warmup_epochs))
 
 

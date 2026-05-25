@@ -10,7 +10,7 @@ from models.utils import get_logp
 from utils import get_residual_features, get_matched_ref_features
 from utils import calculate_metrics
 from residual_wavelet import apply_residual_wavelet_filter
-from models.soft_codebook import apply_soft_codebook_if_enabled
+from models.soft_codebook import apply_soft_codebook_flat_if_enabled
 from losses.utils import get_logp_a
 
 warnings.filterwarnings('ignore')
@@ -54,19 +54,19 @@ def validate(args, encoder, constraintor, soft_codebook, estimators, test_loader
                 )
             
             rfeatures = constraintor(*rfeatures)
-            rfeatures = apply_soft_codebook_if_enabled(
-                args,
-                soft_codebook,
-                rfeatures,
-                epoch=epoch,
-                debug_shapes=False,
-                prefix="validate_soft_codebook",
-            )
         
             for l in range(args.feature_levels):
                 e = rfeatures[l]  
                 bs, dim, h, w = e.size()
                 e = e.permute(0, 2, 3, 1).reshape(-1, dim)
+                e = apply_soft_codebook_flat_if_enabled(
+                    args,
+                    soft_codebook,
+                    l,
+                    e,
+                    epoch=epoch,
+                    prefix="validate_soft_codebook",
+                )
                 
                 pos_embed = get_position_encoding(args.pos_embed_dim, h, w).to(args.device).unsqueeze(0).repeat(bs, 1, 1, 1)
                 pos_embed = pos_embed.permute(0, 2, 3, 1).reshape(-1, args.pos_embed_dim)

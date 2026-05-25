@@ -37,9 +37,18 @@ def main():
         assert torch.isfinite(after5).all()
 
     flat = features[0].permute(0, 2, 3, 1).reshape(-1, channels[0])
+    flat_out0 = apply_soft_codebook_flat_if_enabled(args, soft_codebook, 0, flat, epoch=0)
+    soft_codebook.zero_grad()
+    flat_out0.pow(2).mean().backward()
+    assert soft_codebook.adapters[0].codebook.weight.grad is not None
+    assert soft_codebook.adapters[0].codebook.weight.grad.abs().sum().item() == 0.0
+
     flat_out = apply_soft_codebook_flat_if_enabled(args, soft_codebook, 0, flat, epoch=5)
     assert flat.shape == flat_out.shape
     assert torch.isfinite(flat_out).all()
+    soft_codebook.zero_grad()
+    flat_out.pow(2).mean().backward()
+    assert soft_codebook.adapters[0].codebook.weight.grad is not None
 
     reloaded = SoftCodebookAdapterList(
         channels,
