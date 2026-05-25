@@ -49,6 +49,25 @@ def _debug_soft_codebook_grad(args, soft_codebook, level):
     setattr(args, "_soft_cb_debug_grad_levels", printed)
 
 
+def _debug_nf_chunk_plan(args, prefix, level, total, num_chunks, N_batch):
+    printed = getattr(args, "_nf_chunk_debug_keys", set())
+    key = (prefix, level)
+    if key in printed:
+        return
+    print(f"[{prefix}] level {level}: total patches={total}, chunks={num_chunks}, N_batch={N_batch}")
+    printed.add(key)
+    setattr(args, "_nf_chunk_debug_keys", printed)
+
+
+def _iter_feature_chunks(args, prefix, level, total, N_batch):
+    perm = torch.randperm(total, device=args.device)
+    num_chunks = math.ceil(total / N_batch)
+    _debug_nf_chunk_plan(args, prefix, level, total, num_chunks, N_batch)
+    for start in range(0, total, N_batch):
+        end = min(start + N_batch, total)
+        yield perm[start:end]
+
+
 def train(args, rfeatures, decoders, optimizer, masks, boundary_ops, epoch, N_batch=4096, FIRST_STAGE_EPOCH=10, soft_codebook=None):
     train_loss_total, total_num = 0, 0
     for l in range(args.feature_levels):
@@ -62,14 +81,12 @@ def train(args, rfeatures, decoders, optimizer, masks, boundary_ops, epoch, N_ba
         pos_embed = get_position_encoding(args.pos_embed_dim, h, w).to(args.device).unsqueeze(0).repeat(bs, 1, 1, 1)
         pos_embed = pos_embed.permute(0, 2, 3, 1).reshape(-1, args.pos_embed_dim)
         decoder = decoders[l]
-            
-        perm = torch.randperm(bs*h*w, device=args.device)
-        num_N_batches = bs*h*w // N_batch
-        for i in range(num_N_batches):
-            idx = torch.arange(i*N_batch, (i+1)*N_batch)
-            p_b = pos_embed[perm[idx]]  
-            e_b = e[perm[idx]]  
-            m_b = masks_[perm[idx]]  
+
+        total = bs * h * w
+        for idx in _iter_feature_chunks(args, "train_nf", l, total, N_batch):
+            p_b = pos_embed[idx]
+            e_b = e[idx]
+            m_b = masks_[idx]
             e_b_before_soft_cb = e_b
             e_b = apply_soft_codebook_flat_if_enabled(
                 args,
@@ -161,14 +178,12 @@ def train2(args, rfeatures, decoders, optimizer, lvl_masks, boundary_ops, epoch,
         pos_embed = get_position_encoding(args.pos_embed_dim, h, w).to(args.device).unsqueeze(0).repeat(bs, 1, 1, 1)
         pos_embed = pos_embed.permute(0, 2, 3, 1).reshape(-1, args.pos_embed_dim)
         decoder = decoders[l]
-            
-        perm = torch.randperm(bs*h*w, device=args.device)
-        num_N_batches = bs*h*w // N_batch
-        for i in range(num_N_batches):
-            idx = torch.arange(i*N_batch, (i+1)*N_batch)
-            p_b = pos_embed[perm[idx]]  
-            e_b = e[perm[idx]]  
-            m_b = m[perm[idx]]  
+
+        total = bs * h * w
+        for idx in _iter_feature_chunks(args, "train2_nf", l, total, N_batch):
+            p_b = pos_embed[idx]
+            e_b = e[idx]
+            m_b = m[idx]
             
             if args.flow_arch == 'flow_model':
                 z, log_jac_det = decoder(e_b)  
