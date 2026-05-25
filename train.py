@@ -8,12 +8,22 @@ from models.utils import get_logp, log_theta
 from losses.focal_loss import FocalLoss
 from losses.loss import calculate_log_barrier_bg_spp_loss, get_flow_loss, get_flow_loss_with_boundary
 from losses.utils import get_logp_a, get_normal_boundary
+from models.soft_codebook import apply_soft_codebook_flat_if_enabled
 
 warnings.filterwarnings('ignore')
 logp_wrapper = log_theta
 
 
-def train(args, rfeatures, decoders, optimizer, masks, boundary_ops, epoch, N_batch=4096, FIRST_STAGE_EPOCH=10):
+def _skip_nonfinite_nf_loss(args, loss, level, epoch):
+    if not getattr(args, "use_soft_codebook", False):
+        return False
+    if torch.isfinite(loss.detach()).item():
+        return False
+    print(f"[WARN] NF loss is non-finite at epoch={epoch}, level={level}; skipping optimizer step.")
+    return True
+
+
+def train(args, rfeatures, decoders, optimizer, masks, boundary_ops, epoch, N_batch=4096, FIRST_STAGE_EPOCH=10, soft_codebook=None):
     train_loss_total, total_num = 0, 0
     for l in range(args.feature_levels):
         e = rfeatures[l]  
@@ -34,6 +44,14 @@ def train(args, rfeatures, decoders, optimizer, masks, boundary_ops, epoch, N_ba
             p_b = pos_embed[perm[idx]]  
             e_b = e[perm[idx]]  
             m_b = masks_[perm[idx]]  
+            e_b = apply_soft_codebook_flat_if_enabled(
+                args,
+                soft_codebook,
+                l,
+                e_b,
+                epoch=epoch,
+                prefix="train_soft_codebook",
+            )
             
             if args.flow_arch == 'flow_model':
                 z, log_jac_det = decoder(e_b)  
@@ -46,6 +64,8 @@ def train(args, rfeatures, decoders, optimizer, masks, boundary_ops, epoch, N_ba
                 logps = logps / dim
                 loss = -logp_wrapper(logps).mean()
 
+                if _skip_nonfinite_nf_loss(args, loss, l, epoch):
+                    continue
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -88,6 +108,8 @@ def train(args, rfeatures, decoders, optimizer, masks, boundary_ops, epoch, N_ba
                     loss = loss_ml + loss_ml_a + loss_focal + args.bgspp_lambda * (loss_n_con + loss_a_con)
                 
                 optimizer.zero_grad()
+                if _skip_nonfinite_nf_loss(args, loss, l, epoch):
+                    continue
                 loss.backward()
                 optimizer.step()
                 loss_item = loss.item()
