@@ -10,12 +10,15 @@ from models.utils import get_logp
 from utils import get_residual_features, get_matched_ref_features
 from utils import calculate_metrics
 from residual_wavelet import apply_residual_wavelet_filter
+from models.soft_codebook import apply_soft_codebook_if_enabled
 from losses.utils import get_logp_a
 
 warnings.filterwarnings('ignore')
 
-def validate(args, encoder, constraintor, estimators, test_loader, ref_features, device, class_name):
+def validate(args, encoder, constraintor, soft_codebook, estimators, test_loader, ref_features, device, class_name, epoch=None):
     constraintor.eval()
+    if soft_codebook is not None:
+        soft_codebook.eval()
     for estimator in estimators:  
         estimator.eval()
     
@@ -51,6 +54,14 @@ def validate(args, encoder, constraintor, estimators, test_loader, ref_features,
                 )
             
             rfeatures = constraintor(*rfeatures)
+            rfeatures = apply_soft_codebook_if_enabled(
+                args,
+                soft_codebook,
+                rfeatures,
+                epoch=epoch,
+                debug_shapes=False,
+                prefix="validate_soft_codebook",
+            )
         
             for l in range(args.feature_levels):
                 e = rfeatures[l]  
@@ -95,6 +106,15 @@ def validate(args, encoder, constraintor, estimators, test_loader, ref_features,
     metrics['scores'] = [img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro]
     
     return metrics
+
+
+def load_soft_codebook_state(args, checkpoint, soft_codebook):
+    if not args.use_soft_codebook or soft_codebook is None:
+        return
+    if 'soft_codebook' not in checkpoint:
+        print("[SoftCodebook] checkpoint has no soft_codebook state; skipping load.")
+        return
+    soft_codebook.load_state_dict(checkpoint['soft_codebook'], strict=False)
 
 
 def convert_to_anomaly_scores(logps_list, feature_levels=3, size=224):

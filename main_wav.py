@@ -21,6 +21,7 @@ from datasets.capsules import CAPSULES, CAPSULESANO
 
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
+from models.soft_codebook import SoftCodebookAdapterList, apply_soft_codebook_if_enabled
 from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features
 from utils import BoundaryAverager
 from residual_wavelet import apply_residual_wavelet_filter, residual_wavelet_shape_test
@@ -38,6 +39,19 @@ SETTINGS = {'visa_to_mvtec': VISA_TO_MVTEC, 'mvtec_to_visa': MVTEC_TO_VISA,
             'mvtec_to_btad': MVTEC_TO_BTAD, 'mvtec_to_mvtec3d': MVTEC_TO_MVTEC3D,
             'mvtec_to_mpdd': MVTEC_TO_MPDD, 'mvtec_to_mvtecloco': MVTEC_TO_MVTECLOCO,
             'mvtec_to_brats': MVTEC_TO_BRATS,'mvtec_to_mvtec':MVTEC_TO_MVTEC, 'visa_to_visa':VISA_TO_VISA, 'capsules_to_capsules': CAPSULES_TO_CAPSULES}
+
+
+def print_soft_codebook_config(args):
+    print("[SoftCodebook] use_soft_codebook:", args.use_soft_codebook)
+    print("[SoftCodebook] soft_cb_pos:", args.soft_cb_pos)
+    print("[SoftCodebook] soft_cb_k:", args.soft_cb_k)
+    print("[SoftCodebook] soft_cb_tau:", args.soft_cb_tau)
+    print("[SoftCodebook] soft_cb_gamma:", args.soft_cb_gamma)
+    print("[SoftCodebook] soft_cb_warmup_epochs:", args.soft_cb_warmup_epochs)
+    print("[SoftCodebook] soft_cb_conf_gate:", args.soft_cb_conf_gate)
+    print("[SoftCodebook] soft_cb_gate_threshold:", args.soft_cb_gate_threshold)
+    print("[SoftCodebook] soft_cb_gate_temp:", args.soft_cb_gate_temp)
+
 
 def main(args):
     if args.setting in SETTINGS.keys():
@@ -97,11 +111,25 @@ def main(args):
         feat_dims = encoder.feature_info.channels()
         
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
+    print_soft_codebook_config(args)
     
     # constraintorの初期化 (元のmain.pyに準拠)
     constraintor = MultiScaleConv(feat_dims).to(args.device)
     optimizer0 = torch.optim.Adam(constraintor.parameters(), lr=args.lr, weight_decay=0.0005)
     scheduler0 = torch.optim.lr_scheduler.MultiStepLR(optimizer0, milestones=[70, 90], gamma=0.1)
+
+    soft_codebook = None
+    if args.use_soft_codebook:
+        soft_codebook = SoftCodebookAdapterList(
+            feat_dims,
+            num_embeddings=args.soft_cb_k,
+            tau=args.soft_cb_tau,
+            gamma=args.soft_cb_gamma,
+            warmup_epochs=args.soft_cb_warmup_epochs,
+            conf_gate=args.soft_cb_conf_gate,
+            gate_threshold=args.soft_cb_gate_threshold,
+            gate_temp=args.soft_cb_gate_temp,
+        ).to(args.device)
     
     # NFの初期化
     estimators = [load_flow_model(args, feat_dim) for feat_dim in feat_dims]
@@ -109,14 +137,19 @@ def main(args):
     params = list(estimators[0].parameters())
     for l in range(1, args.feature_levels):
         params += list(estimators[l].parameters())
+    if soft_codebook is not None:
+        params += list(soft_codebook.parameters())
     optimizer1 = torch.optim.Adam(params, lr=args.lr, weight_decay=0.0005)
     scheduler1 = torch.optim.lr_scheduler.MultiStepLR(optimizer1, milestones=[70, 90], gamma=0.1)
     
     best_img_auc = 0
     N_batch = 8192
+    soft_cb_debug_printed = False
     
     for epoch in range(args.epochs):
         constraintor.train()
+        if soft_codebook is not None:
+            soft_codebook.train()
         for estimator in estimators:
             estimator.train()
             
@@ -180,8 +213,30 @@ def main(args):
             train_loss_total += loss.item()
             total_num += 1
             
-            rfeatures = [rfeature.detach().clone() for rfeature in rfeatures]
-            loss, num = train(args, rfeatures, estimators, optimizer1, masks, boundary_ops, epoch, N_batch=N_batch, FIRST_STAGE_EPOCH=FIRST_STAGE_EPOCH)
+            nf_features = [rfeature.detach().clone() for rfeature in rfeatures]
+            if args.use_soft_codebook and not soft_cb_debug_printed:
+                with torch.no_grad():
+                    apply_soft_codebook_if_enabled(
+                        args,
+                        soft_codebook,
+                        nf_features,
+                        epoch=epoch,
+                        debug_shapes=True,
+                        prefix="train_soft_codebook",
+                    )
+                soft_cb_debug_printed = True
+            loss, num = train(
+                args,
+                nf_features,
+                estimators,
+                optimizer1,
+                masks,
+                boundary_ops,
+                epoch,
+                N_batch=N_batch,
+                FIRST_STAGE_EPOCH=FIRST_STAGE_EPOCH,
+                soft_codebook=soft_codebook,
+            )
             train_loss_total += loss
             total_num += num
         
@@ -218,7 +273,7 @@ def main(args):
                 
                 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=8, drop_last=False)
                 
-                metrics = validate(args, encoder, constraintor, estimators, test_loader, test_ref_features[class_name], args.device, class_name)
+                metrics = validate(args, encoder, constraintor, soft_codebook, estimators, test_loader, test_ref_features[class_name], args.device, class_name, epoch=epoch)
                 
                 img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = metrics['scores']
                 
@@ -249,6 +304,8 @@ def main(args):
                 best_img_auc = img_auc
                 state_dict = {'constraintor': constraintor.state_dict(),
                               'estimators': [estimator.state_dict() for estimator in estimators]}
+                if soft_codebook is not None:
+                    state_dict['soft_codebook'] = soft_codebook.state_dict()
                 torch.save(state_dict, os.path.join(args.checkpoint_path, f'{args.setting}_epoch_{epoch}_checkpoints.pth'))
 
 
@@ -305,6 +362,15 @@ if __name__ == "__main__":
     parser.add_argument("--ll_skip_alpha", type=float, default=0.5)
     parser.add_argument("--hf_gate_beta", type=float, default=1.0)
     parser.add_argument("--wav_shape_test", action="store_true")
+    parser.add_argument("--use_soft_codebook", action="store_true")
+    parser.add_argument("--soft_cb_pos", type=str, default="post_constraintor", choices=["post_constraintor"])
+    parser.add_argument("--soft_cb_k", type=int, default=512)
+    parser.add_argument("--soft_cb_tau", type=float, default=0.2)
+    parser.add_argument("--soft_cb_gamma", type=float, default=0.03)
+    parser.add_argument("--soft_cb_warmup_epochs", type=int, default=5)
+    parser.add_argument("--soft_cb_conf_gate", action="store_true")
+    parser.add_argument("--soft_cb_gate_threshold", type=float, default=0.0)
+    parser.add_argument("--soft_cb_gate_temp", type=float, default=0.05)
     
     args = parser.parse_args()
     init_seeds(42)
