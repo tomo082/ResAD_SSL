@@ -634,3 +634,107 @@ class HaarWaveletFilter(nn.Module):
               F.conv_transpose2d(lh, self.k_lh.expand(C, 1, 2, 2), stride=2, groups=C) + \
               F.conv_transpose2d(hh, self.k_hh.expand(C, 1, 2, 2), stride=2, groups=C)
         return out
+from typing import List
+import torch
+import torch.nn.functional as F
+from torch import Tensor
+
+
+def get_matched_ref_features_top_per_ref(
+    features: List[Tensor],
+    ref_features: List[Tensor],
+    ref_id: int,
+    num_ref_shot: int,
+    rank: int = 0,
+) -> List[Tensor]:
+    """
+    Reference画像ごとに制限した Top-k matching.
+
+    通常の get_matched_ref_features_top は、
+        全reference画像 * 全spatial patch
+    の memory bank から Top-k を取る。
+
+    この関数は、
+        指定した ref_id の reference画像内の patch
+    だけに制限して Top-k を取る。
+
+    Args:
+        features:
+            test image features.
+            各要素の shape は (B, C, H, W)
+
+        ref_features:
+            reference features.
+            各要素の shape は (num_ref_shot * H * W, C) を想定
+
+        ref_id:
+            使う reference 画像の index.
+            0 <= ref_id < num_ref_shot
+
+        num_ref_shot:
+            reference画像枚数.
+            例: 4-shot なら 4
+
+        rank:
+            0なら Top-1, 1なら Top-2, ...
+            ただし指定 reference 画像内の patch の中での順位。
+
+    Returns:
+        matched_ref_features:
+            各 layer の matched reference features.
+            各要素の shape は (B, C, H, W)
+    """
+    assert 0 <= ref_id < num_ref_shot, \
+        f"ref_id must be in [0, {num_ref_shot - 1}], but got {ref_id}"
+
+    matched_ref_features = []
+
+    for layer_id in range(len(features)):
+        feature = features[layer_id]
+        B, C, H, W = feature.shape
+
+        # test features: (B, C, H, W) -> (B*H*W, C)
+        feature_flat = feature.permute(0, 2, 3, 1).reshape(-1, C).contiguous()
+        feature_n = F.normalize(feature_flat, p=2, dim=1)
+
+        coreset_all = ref_features[layer_id]  # expected: (num_ref_shot * H * W, C)
+
+        patches_per_ref = H * W
+        expected_min_patches = num_ref_shot * patches_per_ref
+
+        if coreset_all.shape[0] < expected_min_patches:
+            raise ValueError(
+                f"Layer {layer_id}: ref_features has too few patches. "
+                f"Expected at least {expected_min_patches}, "
+                f"but got {coreset_all.shape[0]}. "
+                f"Check num_ref_shot or feature spatial size."
+            )
+
+        # ref_id 番目の reference 画像の patch だけを取り出す
+        start = ref_id * patches_per_ref
+        end = (ref_id + 1) * patches_per_ref
+        coreset = coreset_all[start:end]  # (H*W, C)
+
+        if rank >= coreset.shape[0]:
+            raise ValueError(
+                f"rank={rank} is too large for one reference image. "
+                f"One reference has only {coreset.shape[0]} patches."
+            )
+
+        coreset_n = F.normalize(coreset, p=2, dim=1)
+
+        # cosine similarity: (B*H*W, H*W)
+        dist = feature_n @ coreset_n.T
+
+        if rank == 0:
+            cidx = torch.argmax(dist, dim=1)
+        else:
+            _, topk_indices = torch.topk(dist, k=rank + 1, dim=1)
+            cidx = topk_indices[:, -1]
+
+        index_feats = coreset[cidx]
+        index_feats = index_feats.reshape(B, H, W, C).permute(0, 3, 1, 2).contiguous()
+
+        matched_ref_features.append(index_feats)
+
+    return matched_ref_features
