@@ -22,7 +22,7 @@ from datasets.capsules import CAPSULES, CAPSULESANO
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
 from models.soft_codebook import SoftCodebookAdapterList
-from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features
+from utils import init_seeds, get_residual_features_by_mode, get_mc_matched_ref_features, get_mc_reference_features
 from utils import BoundaryAverager
 from residual_wavelet import apply_residual_wavelet_filter, residual_wavelet_shape_test
 from losses.loss import calculate_log_barrier_bi_occ_loss
@@ -113,6 +113,7 @@ def main(args):
         feat_dims = encoder.feature_info.channels()
         
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
+    print("[Residual] residual_mode:", args.residual_mode)
     print_soft_codebook_config(args)
     
     # constraintorの初期化 (元のmain.pyに準拠)
@@ -175,7 +176,11 @@ def main(args):
             
             ref_features = get_mc_reference_features(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot)
             mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
-            rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
+            rfeatures = get_residual_features_by_mode(
+                features,
+                mfeatures,
+                mode=args.residual_mode,
+            )
             if args.use_wav and args.wav_on == 'residual':
                 rfeatures = apply_residual_wavelet_filter(
                     rfeatures,
@@ -343,6 +348,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_embeddings', type=int, default=1536)
     parser.add_argument("--train_ref_shot", type=int, default=4)
     parser.add_argument("--num_ref_shot", type=int, default=4)
+    parser.add_argument("--residual_mode", type=str, default="sq", choices=["sq", "abs", "signed"])
     
     parser.add_argument("--use_wav", action="store_true")
     parser.add_argument("--wav_on", type=str, default="residual", choices=["residual"])
