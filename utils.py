@@ -99,6 +99,22 @@ def get_residual_features(features: List[Tensor], ref_features: List[Tensor], po
         residual_features.append(ri)
     
     return residual_features
+
+
+def get_residual_features_by_mode(features: List[Tensor], ref_features: List[Tensor], mode: str = "sq") -> List[Tensor]:
+    residual_features = []
+    for fi, pi in zip(features, ref_features):
+        if mode == "sq":
+            ri = F.mse_loss(fi, pi, reduction='none')
+        elif mode == "abs":
+            ri = torch.abs(fi - pi)
+        elif mode == "signed":
+            ri = fi - pi
+        else:
+            raise ValueError(f"Unsupported residual_mode: {mode}")
+        residual_features.append(ri)
+
+    return residual_features
 import torch
 
 def get_image_level_matched_features(features, ref_features):
