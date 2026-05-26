@@ -20,6 +20,7 @@ from datasets.mpdd import MPDD
 from datasets.mvtec_loco import MVTECLOCO
 from datasets.brats import BRATS
 from models.imagebind import ImageBindModel
+from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES
 from utils import load_weights
 
 # ==========================================
@@ -146,6 +147,7 @@ def main(args):
     image_size = 224
     device = args.device
     root_dir = args.few_shot_dir
+    # TODO: Consider adding a DINOv2-specific normalization option and compare it with the existing reference transform.
     if args.backbone == 'wide_resnet50_2':
         encoder = timm.create_model('wide_resnet50_2', features_only=True,
                 out_indices=(1, 2, 3), pretrained=True).eval()
@@ -154,6 +156,14 @@ def main(args):
         encoder = timm.create_model('tf_efficientnet_b6', features_only=True,
                 out_indices=(1, 2, 3), pretrained=True).eval()
         encoder = encoder.to(device)
+    elif args.backbone in DINOV2_BACKBONES:
+        encoder = DINOv2BackboneWrapper(
+            model_name=args.backbone,
+            out_dims=(40, 72, 200),
+            out_sizes=(56, 28, 14),
+            freeze=True,
+        ).to(device)
+        encoder.eval()
         
     # ウェーブレットフィルタの初期化
     wav_filter = HaarWaveletFilter(low_freq_weight=args.lf_weight, high_freq_weight=args.hf_weight).to(device)

@@ -21,6 +21,7 @@ from datasets.capsules import CAPSULES, CAPSULESANO
 
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
+from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES, dinov2_shape_test
 from models.soft_codebook import SoftCodebookAdapterList
 from utils import init_seeds, get_residual_features_by_mode, get_mc_matched_ref_features, get_mc_reference_features
 from utils import BoundaryAverager
@@ -60,6 +61,8 @@ def main(args):
         CLASSES = SETTINGS[args.setting]
     else:
         raise ValueError(f"Dataset setting must be in {SETTINGS.keys()}, but got {args.setting}.")
+
+    # TODO: Consider adding a DINOv2-specific normalization option and compare it with the existing w50 normalization.
                 
     if args.classes == 'capsules': 
         train_dataset1 = CAPSULES(args.train_dataset_dir, class_name=CLASSES['seen'], train=True, 
@@ -110,6 +113,15 @@ def main(args):
         encoder = timm.create_model('tf_efficientnet_b6', features_only=True,
                 out_indices=(1, 2, 3), pretrained=True).eval() 
         encoder = encoder.to(args.device)
+        feat_dims = encoder.feature_info.channels()
+    elif args.backbone in DINOV2_BACKBONES:
+        encoder = DINOv2BackboneWrapper(
+            model_name=args.backbone,
+            out_dims=(40, 72, 200),
+            out_sizes=(56, 28, 14),
+            freeze=True,
+        ).to(args.device)
+        encoder.eval()
         feat_dims = encoder.feature_info.channels()
         
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
@@ -358,6 +370,7 @@ if __name__ == "__main__":
     parser.add_argument("--ll_skip_alpha", type=float, default=0.5)
     parser.add_argument("--hf_gate_beta", type=float, default=1.0)
     parser.add_argument("--wav_shape_test", action="store_true")
+    parser.add_argument("--dino_shape_test", action="store_true")
     parser.add_argument("--use_soft_codebook", action="store_true")
     parser.add_argument("--soft_cb_pos", type=str, default="post_constraintor", choices=["post_constraintor"])
     parser.add_argument("--soft_cb_k", type=int, default=512)
@@ -374,6 +387,12 @@ if __name__ == "__main__":
         test_device = args.device if torch.cuda.is_available() and str(args.device).startswith("cuda") else "cpu"
         residual_wavelet_shape_test(device=test_device)
         print("Residual wavelet shape test passed.")
+        raise SystemExit(0)
+    if args.dino_shape_test:
+        test_device = args.device if torch.cuda.is_available() and str(args.device).startswith("cuda") else "cpu"
+        model_name = args.backbone if args.backbone in DINOV2_BACKBONES else "dinov2_vits14"
+        dinov2_shape_test(model_name=model_name, device=test_device)
+        print("DINOv2 shape test passed.")
         raise SystemExit(0)
     
     main(args)
