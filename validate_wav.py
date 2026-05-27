@@ -11,11 +11,14 @@ from utils import get_residual_features_by_mode, get_matched_ref_features_by_mod
 from utils import calculate_metrics
 from residual_wavelet import apply_residual_wavelet_filter
 from models.soft_codebook import apply_soft_codebook_flat_if_enabled
+from raw_vqops import apply_raw_vqops_if_enabled
 from losses.utils import get_logp_a
 
 warnings.filterwarnings('ignore')
 
-def validate(args, encoder, constraintor, soft_codebook, estimators, test_loader, ref_features, device, class_name, epoch=None):
+def validate(args, encoder, constraintor, soft_codebook, raw_vq_ops, estimators, test_loader, ref_features, device, class_name, epoch=None):
+    if raw_vq_ops is not None:
+        raw_vq_ops.eval()
     constraintor.eval()
     if soft_codebook is not None:
         soft_codebook.eval()
@@ -63,8 +66,24 @@ def validate(args, encoder, constraintor, soft_codebook, estimators, test_loader
                     ll_skip_alpha=args.ll_skip_alpha,
                     hf_gate_beta=args.hf_gate_beta,
                 )
+
+            if getattr(args, "use_raw_vqops", False) and args.raw_vq_pos == "pre_constraintor":
+                rfeatures = apply_raw_vqops_if_enabled(
+                    args,
+                    raw_vq_ops,
+                    rfeatures,
+                    prefix="validate_pre_constraintor",
+                )
             
             rfeatures = constraintor(*rfeatures)
+
+            if getattr(args, "use_raw_vqops", False) and args.raw_vq_pos == "post_constraintor":
+                rfeatures = apply_raw_vqops_if_enabled(
+                    args,
+                    raw_vq_ops,
+                    rfeatures,
+                    prefix="validate_post_constraintor",
+                )
         
             for l in range(args.feature_levels):
                 e = rfeatures[l]  
