@@ -23,8 +23,10 @@ from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
 from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES, dinov2_shape_test
 from models.soft_codebook import SoftCodebookAdapterList
+from models.vq import MultiScaleVQ
 from utils import init_seeds, get_residual_features_by_mode, get_mc_matched_ref_features_by_mode, get_mc_reference_features
 from utils import BoundaryAverager
+from raw_vqops import apply_raw_vqops_if_enabled, print_raw_vqops_config, train_raw_vqops_if_enabled
 from residual_wavelet import apply_residual_wavelet_filter, residual_wavelet_shape_test
 from losses.loss import calculate_log_barrier_bi_occ_loss
 from classes import VISA_TO_MVTEC, MVTEC_TO_VISA, MVTEC_TO_BTAD, MVTEC_TO_MVTEC3D
@@ -57,6 +59,8 @@ def print_soft_codebook_config(args):
 
 
 def main(args):
+    if args.use_raw_vqops and args.use_soft_codebook:
+        raise ValueError("Do not use raw VQOps and SoftCB together in this ablation.")
     if args.setting in SETTINGS.keys():
         CLASSES = SETTINGS[args.setting]
     else:
@@ -130,7 +134,16 @@ def main(args):
     print("[Matching] match_topk:", args.match_topk)
     print("[Matching] match_tau:", args.match_tau)
     print("[Matching] match_chunk_size:", args.match_chunk_size)
+    print_raw_vqops_config(args)
     print_soft_codebook_config(args)
+
+    raw_vq_ops = None
+    optimizer_vq = None
+    scheduler_vq = None
+    if args.use_raw_vqops:
+        raw_vq_ops = MultiScaleVQ(num_embeddings=args.num_embeddings, channels=feat_dims).to(args.device)
+        optimizer_vq = torch.optim.Adam(raw_vq_ops.parameters(), lr=args.lr, weight_decay=0.0005)
+        scheduler_vq = torch.optim.lr_scheduler.MultiStepLR(optimizer_vq, milestones=[70, 90], gamma=0.1)
     
     # constraintorの初期化 (元のmain.pyに準拠)
     constraintor = MultiScaleConv(feat_dims).to(args.device)
@@ -165,6 +178,8 @@ def main(args):
     N_batch = 8192
     
     for epoch in range(args.epochs):
+        if raw_vq_ops is not None:
+            raw_vq_ops.train()
         constraintor.train()
         if soft_codebook is not None:
             soft_codebook.train()
@@ -220,6 +235,20 @@ def main(args):
                 _, _, h, w = rfeatures[l].size()
                 m = F.interpolate(masks, size=(h, w), mode='nearest').squeeze(1)
                 lvl_masks.append(m)
+
+            if args.use_raw_vqops and args.raw_vq_pos == "pre_constraintor":
+                loss_vq = train_raw_vqops_if_enabled(args, raw_vq_ops, optimizer_vq, rfeatures, lvl_masks)
+                if loss_vq is not None:
+                    train_loss_total += loss_vq.item()
+                    total_num += 1
+                rfeatures = apply_raw_vqops_if_enabled(
+                    args,
+                    raw_vq_ops,
+                    rfeatures,
+                    prefix="train_pre_constraintor",
+                    loss_vq=loss_vq,
+                )
+
             rfeatures_t = [rfeature.detach().clone() for rfeature in rfeatures]
             
             # constraintor 適用
@@ -244,6 +273,18 @@ def main(args):
             total_num += 1
             
             nf_features = [rfeature.detach().clone() for rfeature in rfeatures]
+            if args.use_raw_vqops and args.raw_vq_pos == "post_constraintor":
+                loss_vq = train_raw_vqops_if_enabled(args, raw_vq_ops, optimizer_vq, nf_features, lvl_masks)
+                if loss_vq is not None:
+                    train_loss_total += loss_vq.item()
+                    total_num += 1
+                nf_features = apply_raw_vqops_if_enabled(
+                    args,
+                    raw_vq_ops,
+                    nf_features,
+                    prefix="train_post_constraintor",
+                    loss_vq=loss_vq,
+                )
             loss, num = train(
                 args,
                 nf_features,
@@ -259,6 +300,8 @@ def main(args):
             train_loss_total += loss
             total_num += num
         
+        if scheduler_vq is not None:
+            scheduler_vq.step()
         scheduler0.step()
         scheduler1.step()
                
@@ -292,7 +335,7 @@ def main(args):
                 
                 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=8, drop_last=False)
                 
-                metrics = validate(args, encoder, constraintor, soft_codebook, estimators, test_loader, test_ref_features[class_name], args.device, class_name, epoch=epoch)
+                metrics = validate(args, encoder, constraintor, soft_codebook, raw_vq_ops, estimators, test_loader, test_ref_features[class_name], args.device, class_name, epoch=epoch)
                 
                 img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro = metrics['scores']
                 
@@ -325,6 +368,8 @@ def main(args):
                               'estimators': [estimator.state_dict() for estimator in estimators]}
                 if soft_codebook is not None:
                     state_dict['soft_codebook'] = soft_codebook.state_dict()
+                if raw_vq_ops is not None:
+                    state_dict['raw_vq_ops'] = raw_vq_ops.state_dict()
                 torch.save(state_dict, os.path.join(args.checkpoint_path, f'{args.setting}_epoch_{epoch}_checkpoints.pth'))
 
 
@@ -377,6 +422,9 @@ if __name__ == "__main__":
     parser.add_argument("--match_topk", type=int, default=5)
     parser.add_argument("--match_tau", type=float, default=0.05)
     parser.add_argument("--match_chunk_size", type=int, default=8192)
+    parser.add_argument("--use_raw_vqops", action="store_true")
+    parser.add_argument("--raw_vq_pos", type=str, default="post_constraintor", choices=["pre_constraintor", "post_constraintor"])
+    parser.add_argument("--raw_vq_debug", action="store_true")
     
     parser.add_argument("--use_wav", action="store_true")
     parser.add_argument("--wav_on", type=str, default="residual", choices=["residual"])
