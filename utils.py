@@ -86,6 +86,86 @@ def get_matched_ref_features_top(features: List[Tensor], ref_features: List[Tens
     
     return matched_ref_features
 
+
+_SOFT_TOPK_DEBUG_PRINTED = set()
+
+
+def _debug_soft_topk_match_shapes(prefix, layer_id, feature_shape, coreset_shape, matched_shape):
+    key = (prefix, layer_id)
+    if key in _SOFT_TOPK_DEBUG_PRINTED:
+        return
+    print(
+        f"[SoftTopKMatching] {prefix} level {layer_id}: "
+        f"feature={feature_shape}, coreset={coreset_shape}, matched={matched_shape}"
+    )
+    _SOFT_TOPK_DEBUG_PRINTED.add(key)
+
+
+def _soft_topk_match_flat(feature, coreset, topk=5, tau=0.05, chunk_size=8192):
+    if tau <= 0:
+        raise ValueError("match_tau must be > 0 for soft_topk matching.")
+    if topk <= 0:
+        raise ValueError("match_topk must be > 0 for soft_topk matching.")
+    if chunk_size <= 0:
+        raise ValueError("match_chunk_size must be > 0 for soft_topk matching.")
+
+    feature_n = F.normalize(feature, p=2, dim=1)
+    coreset_n = F.normalize(coreset, p=2, dim=1)
+    k = min(topk, coreset.shape[0])
+
+    outputs = []
+    for start in range(0, feature.shape[0], chunk_size):
+        end = min(start + chunk_size, feature.shape[0])
+        f_chunk = feature_n[start:end]
+        sim = f_chunk @ coreset_n.T
+        topk_sim, topk_idx = torch.topk(sim, k=k, dim=1)
+        weights = torch.softmax(topk_sim / tau, dim=1)
+        topk_ref = coreset[topk_idx]
+        matched = torch.sum(weights.unsqueeze(-1) * topk_ref, dim=1)
+        outputs.append(matched)
+
+    return torch.cat(outputs, dim=0)
+
+
+def get_matched_ref_features_by_mode(
+    features,
+    ref_features,
+    match_mode="hard",
+    topk=5,
+    tau=0.05,
+    chunk_size=8192,
+):
+    if match_mode == "hard":
+        return get_matched_ref_features(features, ref_features)
+    if match_mode != "soft_topk":
+        raise ValueError(f"Unsupported match_mode: {match_mode}")
+
+    matched_ref_features = []
+    for layer_id in range(len(features)):
+        feature = features[layer_id]
+        B, C, H, W = feature.shape
+        feature_flat = feature.permute(0, 2, 3, 1).reshape(-1, C).contiguous()
+        coreset = ref_features[layer_id]
+        matched_flat = _soft_topk_match_flat(
+            feature_flat,
+            coreset,
+            topk=topk,
+            tau=tau,
+            chunk_size=chunk_size,
+        )
+        matched = matched_flat.reshape(B, H, W, C).permute(0, 3, 1, 2)
+        _debug_soft_topk_match_shapes(
+            "validate",
+            layer_id,
+            tuple(feature.shape),
+            tuple(coreset.shape),
+            tuple(matched.shape),
+        )
+        matched_ref_features.append(matched)
+
+    return matched_ref_features
+
+
 def get_residual_features(features: List[Tensor], ref_features: List[Tensor], pos_flag: bool = False) -> List[Tensor]:
     residual_features = []
     for layer_id in range(len(features)):
@@ -318,6 +398,56 @@ def get_mc_matched_ref_features(features: List[Tensor], class_names: List[str],
     matched_ref_features = [torch.stack(item, dim=0) for item in matched_ref_features]
     
     return matched_ref_features
+
+
+def get_mc_matched_ref_features_by_mode(
+    features,
+    class_names,
+    ref_features,
+    match_mode="hard",
+    topk=5,
+    tau=0.05,
+    chunk_size=8192,
+):
+    if match_mode == "hard":
+        return get_mc_matched_ref_features(features, class_names, ref_features)
+    if match_mode != "soft_topk":
+        raise ValueError(f"Unsupported match_mode: {match_mode}")
+
+    matched_ref_features = [[] for _ in range(len(features))]
+    coreset_shapes = [None for _ in range(len(features))]
+    for idx, c in enumerate(class_names):
+        ref_features_c = ref_features[c]
+
+        for layer_id in range(len(features)):
+            feature = features[layer_id][idx:idx + 1]
+            _, C, H, W = feature.shape
+            feature_flat = feature.permute(0, 2, 3, 1).reshape(-1, C).contiguous()
+            coreset = ref_features_c[layer_id]
+            if coreset_shapes[layer_id] is None:
+                coreset_shapes[layer_id] = tuple(coreset.shape)
+            matched_flat = _soft_topk_match_flat(
+                feature_flat,
+                coreset,
+                topk=topk,
+                tau=tau,
+                chunk_size=chunk_size,
+            )
+            matched = matched_flat.permute(1, 0).reshape(C, H, W)
+            matched_ref_features[layer_id].append(matched)
+
+    stacked_features = []
+    for layer_id, item in enumerate(matched_ref_features):
+        matched = torch.stack(item, dim=0)
+        _debug_soft_topk_match_shapes(
+            "train",
+            layer_id,
+            tuple(features[layer_id].shape),
+            coreset_shapes[layer_id],
+            tuple(matched.shape),
+        )
+        stacked_features.append(matched)
+    return stacked_features
 
 
 def calculate_metrics(scores, labels, gt_masks, pro=True, only_max_value=True):
