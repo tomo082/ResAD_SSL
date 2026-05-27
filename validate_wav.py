@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 from models.modules import get_position_encoding
 from models.utils import get_logp
-from utils import get_residual_features_by_mode, get_matched_ref_features
+from utils import get_residual_features_by_mode, get_matched_ref_features_by_mode
 from utils import calculate_metrics
 from residual_wavelet import apply_residual_wavelet_filter
 from models.soft_codebook import apply_soft_codebook_flat_if_enabled
@@ -41,7 +41,14 @@ def validate(args, encoder, constraintor, soft_codebook, estimators, test_loader
         
         with torch.no_grad():
             features = encoder(image)
-            mfeatures = get_matched_ref_features(features, ref_features)
+            mfeatures = get_matched_ref_features_by_mode(
+                features,
+                ref_features,
+                match_mode=args.match_mode,
+                topk=args.match_topk,
+                tau=args.match_tau,
+                chunk_size=args.match_chunk_size,
+            )
             rfeatures = get_residual_features_by_mode(
                 features,
                 mfeatures,

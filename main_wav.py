@@ -23,7 +23,7 @@ from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
 from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES, dinov2_shape_test
 from models.soft_codebook import SoftCodebookAdapterList
-from utils import init_seeds, get_residual_features_by_mode, get_mc_matched_ref_features, get_mc_reference_features
+from utils import init_seeds, get_residual_features_by_mode, get_mc_matched_ref_features_by_mode, get_mc_reference_features
 from utils import BoundaryAverager
 from residual_wavelet import apply_residual_wavelet_filter, residual_wavelet_shape_test
 from losses.loss import calculate_log_barrier_bi_occ_loss
@@ -126,6 +126,10 @@ def main(args):
         
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
     print("[Residual] residual_mode:", args.residual_mode)
+    print("[Matching] match_mode:", args.match_mode)
+    print("[Matching] match_topk:", args.match_topk)
+    print("[Matching] match_tau:", args.match_tau)
+    print("[Matching] match_chunk_size:", args.match_chunk_size)
     print_soft_codebook_config(args)
     
     # constraintorの初期化 (元のmain.pyに準拠)
@@ -187,7 +191,15 @@ def main(args):
                 features = encoder(images)
             
             ref_features = get_mc_reference_features(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot)
-            mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
+            mfeatures = get_mc_matched_ref_features_by_mode(
+                features,
+                class_names,
+                ref_features,
+                match_mode=args.match_mode,
+                topk=args.match_topk,
+                tau=args.match_tau,
+                chunk_size=args.match_chunk_size,
+            )
             rfeatures = get_residual_features_by_mode(
                 features,
                 mfeatures,
@@ -361,6 +373,10 @@ if __name__ == "__main__":
     parser.add_argument("--train_ref_shot", type=int, default=4)
     parser.add_argument("--num_ref_shot", type=int, default=4)
     parser.add_argument("--residual_mode", type=str, default="sq", choices=["sq", "abs", "signed"])
+    parser.add_argument("--match_mode", type=str, default="hard", choices=["hard", "soft_topk"])
+    parser.add_argument("--match_topk", type=int, default=5)
+    parser.add_argument("--match_tau", type=float, default=0.05)
+    parser.add_argument("--match_chunk_size", type=int, default=8192)
     
     parser.add_argument("--use_wav", action="store_true")
     parser.add_argument("--wav_on", type=str, default="residual", choices=["residual"])
