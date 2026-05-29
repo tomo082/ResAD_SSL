@@ -34,6 +34,7 @@ warnings.filterwarnings("ignore")
 
 TOTAL_SHOT = 4
 DINOV2_BACKBONES = ("dinov2_vits14", "dinov2_vitb14")
+DINOV2_FEATURE_MODES = ("final_projected", "intermediate_fixed_projected")
 SETTINGS = {
     "visa_to_mvtec": VISA_TO_MVTEC,
     "mvtec_to_visa": MVTEC_TO_VISA,
@@ -122,15 +123,19 @@ def build_encoder(args):
 
     if args.backbone in DINOV2_BACKBONES:
         # TODO: Consider adding a DINOv2-specific normalization option and compare it with the existing w50 normalization.
-        from models.dinov2_backbone import DINOv2BackboneWrapper
+        from models.dinov2_backbone import DINOv2BackboneWrapper, print_dinov2_config
 
         encoder = DINOv2BackboneWrapper(
             model_name=args.backbone,
             out_dims=(40, 72, 200),
             out_sizes=(56, 28, 14),
             freeze=True,
+            feature_mode=args.dinov2_feature_mode,
+            layers=args.dinov2_layers,
+            proj_dim=args.dinov2_proj_dim,
         ).to(args.device)
         encoder.eval()
+        print_dinov2_config(encoder, image_size=224)
         return encoder, encoder.feature_info.channels()
 
     raise ValueError(f"Unsupported backbone: {args.backbone}")
@@ -367,6 +372,9 @@ def build_parser():
     parser.add_argument("--checkpoint_path", type=str, default="")
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--backbone", type=str, default="wide_resnet50_2")
+    parser.add_argument("--dinov2_feature_mode", type=str, default="final_projected", choices=DINOV2_FEATURE_MODES)
+    parser.add_argument("--dinov2_layers", type=int, nargs="+", default=[4, 8, 12])
+    parser.add_argument("--dinov2_proj_dim", type=int, default=256)
     parser.add_argument("--num_ref_shot", type=int, default=4)
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--save_csv", type=str, default="")
