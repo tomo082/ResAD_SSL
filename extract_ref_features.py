@@ -23,6 +23,38 @@ from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES, DINO
 from models.dinov2_backbone import print_dinov2_config
 from utils import load_weights
 
+
+def rotate_rgb_image(img, angle, fill_mode="reflect"):
+    if angle % 360 == 0:
+        return img
+    try:
+        import cv2
+    except ImportError as exc:
+        raise ImportError("cv2 is required for --ref_aug rotate.") from exc
+
+    img_np = np.array(img.convert("RGB"))
+    h, w = img_np.shape[:2]
+    center = (w / 2.0, h / 2.0)
+    matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+    if fill_mode == "reflect":
+        border_mode = cv2.BORDER_REFLECT_101
+        border_value = 0
+    elif fill_mode == "constant":
+        border_mode = cv2.BORDER_CONSTANT
+        border_value = (0, 0, 0)
+    else:
+        raise ValueError(f"Unsupported ref_aug_fill: {fill_mode}")
+    rotated = cv2.warpAffine(
+        img_np,
+        matrix,
+        (w, h),
+        flags=cv2.INTER_LINEAR,
+        borderMode=border_mode,
+        borderValue=border_value,
+    )
+    return Image.fromarray(rotated)
+
+
 class FEWSHOTDATA(Dataset):
     
     def __init__(self, 
@@ -35,6 +67,13 @@ class FEWSHOTDATA(Dataset):
         self.class_name = class_name
         self.train = train
         self.mask_size = [kwargs.get('msk_crp_size'), kwargs.get('msk_crp_size')]
+        self.ref_aug = kwargs.get("ref_aug", "none")
+        self.ref_aug_angles = list(kwargs.get("ref_aug_angles", [0]))
+        self.ref_aug_fill = kwargs.get("ref_aug_fill", "reflect")
+        if self.ref_aug not in ("none", "rotate"):
+            raise ValueError(f"Unsupported ref_aug: {self.ref_aug}")
+        if not self.ref_aug_angles:
+            raise ValueError("ref_aug_angles must contain at least one angle.")
         
         self.image_paths, self.labels, self.mask_paths, self.class_names = self._load_data(self.class_name)
     
@@ -52,16 +91,30 @@ class FEWSHOTDATA(Dataset):
             T.ToTensor()])
     
     def __len__(self):
+        if self.ref_aug == "rotate":
+            return len(self.image_paths) * len(self.ref_aug_angles)
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        image_path, label, mask_path, class_name = self.image_paths[idx], self.labels[idx], self.mask_paths[idx], self.class_names[idx]
-        img, label, mask = self._load_image_and_mask(image_path, label, mask_path)
+        if self.ref_aug == "rotate":
+            image_idx = idx // len(self.ref_aug_angles)
+            angle = self.ref_aug_angles[idx % len(self.ref_aug_angles)]
+        else:
+            image_idx = idx
+            angle = None
+
+        image_path = self.image_paths[image_idx]
+        label = self.labels[image_idx]
+        mask_path = self.mask_paths[image_idx]
+        class_name = self.class_names[image_idx]
+        img, label, mask = self._load_image_and_mask(image_path, label, mask_path, angle=angle)
         
         return img, label, mask, class_name
     
-    def _load_image_and_mask(self, image_path, label, mask_path):
+    def _load_image_and_mask(self, image_path, label, mask_path, angle=None):
         img = Image.open(image_path).convert('RGB')
+        if angle is not None:
+            img = rotate_rgb_image(img, angle, fill_mode=self.ref_aug_fill)
        
         img = self.transform(img)
         
@@ -116,6 +169,11 @@ def main(args):
     image_size = 224
     device = 'cuda:0'
     root_dir = args.few_shot_dir
+    if args.ref_aug == "rotate":
+        print("[RefAug] mode:", args.ref_aug)
+        print("[RefAug] angles:", args.ref_aug_angles)
+        print("[RefAug] fill:", args.ref_aug_fill)
+        print("[RefAug] num_ref_shot=4 is recommended when using rotation augmentation.")
     # TODO: Consider adding a DINOv2-specific normalization option and compare it with the existing reference transform.
     if args.backbone == 'wide_resnet50_2':
         encoder = timm.create_model('wide_resnet50_2', features_only=True,
@@ -150,7 +208,13 @@ def main(args):
     
     for class_name in CLASS_NAMES:
         train_dataset = FEWSHOTDATA(root_dir, class_name=class_name, train=True, img_size=image_size, crp_size=image_size,
-                            msk_size=image_size, msk_crp_size=image_size)
+                            msk_size=image_size, msk_crp_size=image_size, ref_aug=args.ref_aug,
+                            ref_aug_angles=args.ref_aug_angles, ref_aug_fill=args.ref_aug_fill)
+        if args.ref_aug == "rotate":
+            print(
+                "[RefAug] effective reference images per class:",
+                f"{len(train_dataset.image_paths)} * {len(args.ref_aug_angles)} = {len(train_dataset)}",
+            )
         train_loader = DataLoader(
             train_dataset, batch_size=8, shuffle=False, num_workers=8, drop_last=False
         )
@@ -263,6 +327,9 @@ if __name__ == '__main__':
     parser.add_argument("--dinov2_feature_mode", type=str, default="final_projected", choices=DINOV2_FEATURE_MODES)
     parser.add_argument("--dinov2_layers", type=int, nargs="+", default=[4, 8, 12])
     parser.add_argument("--dinov2_proj_dim", type=int, default=256)
+    parser.add_argument("--ref_aug", type=str, default="none", choices=["none", "rotate"])
+    parser.add_argument("--ref_aug_angles", type=int, nargs="+", default=[0, 45, 90, 135, 180, 225, 270, 315])
+    parser.add_argument("--ref_aug_fill", type=str, default="reflect", choices=["reflect", "constant"])
     parser.add_argument('--coupling_layers', type=int, default=10)
     parser.add_argument('--clamp_alpha', type=float, default=1.9)
     parser.add_argument('--pos_embed_dim', type=int, default=256)
