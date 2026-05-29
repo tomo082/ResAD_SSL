@@ -20,7 +20,8 @@ from datasets.mpdd import MPDD
 from datasets.mvtec_loco import MVTECLOCO
 from datasets.brats import BRATS
 from models.imagebind import ImageBindModel
-from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES
+from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES, DINOV2_FEATURE_MODES
+from models.dinov2_backbone import print_dinov2_config
 from utils import load_weights
 
 # ==========================================
@@ -162,8 +163,12 @@ def main(args):
             out_dims=(40, 72, 200),
             out_sizes=(56, 28, 14),
             freeze=True,
+            feature_mode=args.dinov2_feature_mode,
+            layers=args.dinov2_layers,
+            proj_dim=args.dinov2_proj_dim,
         ).to(device)
         encoder.eval()
+        print_dinov2_config(encoder, image_size=image_size)
         
     # ウェーブレットフィルタの初期化
     wav_filter = HaarWaveletFilter(low_freq_weight=args.lf_weight, high_freq_weight=args.hf_weight).to(device)
@@ -296,6 +301,9 @@ if __name__ == '__main__':
     parser.add_argument('--bgadweight_dir', type=str, default="")
     parser.add_argument('--save_dir', type=str, default="./ref_features/w50/mvtec_4shot_wav")
     parser.add_argument('--backbone', type=str, default="wide_resnet50_2")
+    parser.add_argument("--dinov2_feature_mode", type=str, default="final_projected", choices=DINOV2_FEATURE_MODES)
+    parser.add_argument("--dinov2_layers", type=int, nargs="+", default=[4, 8, 12])
+    parser.add_argument("--dinov2_proj_dim", type=int, default=256)
     parser.add_argument('--coupling_layers', type=int, default=10)
     parser.add_argument('--clamp_alpha', type=float, default=1.9)
     parser.add_argument('--pos_embed_dim', type=int, default=256)

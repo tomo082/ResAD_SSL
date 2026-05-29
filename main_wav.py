@@ -21,7 +21,8 @@ from datasets.capsules import CAPSULES, CAPSULESANO
 
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
-from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES, dinov2_shape_test
+from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES, DINOV2_FEATURE_MODES
+from models.dinov2_backbone import dinov2_shape_test, print_dinov2_config
 from models.soft_codebook import SoftCodebookAdapterList
 from models.vq import MultiScaleVQ
 from utils import init_seeds, get_residual_features_by_mode, get_mc_matched_ref_features_by_mode, get_mc_reference_features
@@ -124,9 +125,13 @@ def main(args):
             out_dims=(40, 72, 200),
             out_sizes=(56, 28, 14),
             freeze=True,
+            feature_mode=args.dinov2_feature_mode,
+            layers=args.dinov2_layers,
+            proj_dim=args.dinov2_proj_dim,
         ).to(args.device)
         encoder.eval()
         feat_dims = encoder.feature_info.channels()
+        print_dinov2_config(encoder, image_size=224)
         
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
     print("[Residual] residual_mode:", args.residual_mode)
@@ -435,6 +440,9 @@ if __name__ == "__main__":
     parser.add_argument("--hf_gate_beta", type=float, default=1.0)
     parser.add_argument("--wav_shape_test", action="store_true")
     parser.add_argument("--dino_shape_test", action="store_true")
+    parser.add_argument("--dinov2_feature_mode", type=str, default="final_projected", choices=DINOV2_FEATURE_MODES)
+    parser.add_argument("--dinov2_layers", type=int, nargs="+", default=[4, 8, 12])
+    parser.add_argument("--dinov2_proj_dim", type=int, default=256)
     parser.add_argument("--use_soft_codebook", action="store_true")
     parser.add_argument("--soft_cb_pos", type=str, default="post_constraintor", choices=["post_constraintor"])
     parser.add_argument("--soft_cb_k", type=int, default=512)
@@ -455,7 +463,13 @@ if __name__ == "__main__":
     if args.dino_shape_test:
         test_device = args.device if torch.cuda.is_available() and str(args.device).startswith("cuda") else "cpu"
         model_name = args.backbone if args.backbone in DINOV2_BACKBONES else "dinov2_vits14"
-        dinov2_shape_test(model_name=model_name, device=test_device)
+        dinov2_shape_test(
+            model_name=model_name,
+            device=test_device,
+            feature_mode=args.dinov2_feature_mode,
+            layers=args.dinov2_layers,
+            proj_dim=args.dinov2_proj_dim,
+        )
         print("DINOv2 shape test passed.")
         raise SystemExit(0)
     
