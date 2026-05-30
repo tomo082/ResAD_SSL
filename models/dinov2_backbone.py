@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 
 DINOV2_BACKBONES = ("dinov2_vits14", "dinov2_vitb14")
-DINOV2_FEATURE_MODES = ("final_projected", "intermediate_fixed_projected")
+DINOV2_FEATURE_MODES = ("final_projected", "intermediate_fixed_projected", "final_only")
 _DINOV2_EMBED_DIMS = {
     "dinov2_vits14": 384,
     "dinov2_vitb14": 768,
@@ -68,6 +68,9 @@ class DINOv2BackboneWrapper(nn.Module):
             ])
             self._init_projections(self.projections, trainable=False)
             feature_dims = self.out_dims
+        elif self.feature_mode == "final_only":
+            self.projections = nn.ModuleList()
+            feature_dims = [self.embed_dim]
         else:
             if len(self.layers) != 3:
                 raise ValueError("intermediate_fixed_projected expects exactly 3 DINOv2 layers.")
@@ -208,6 +211,11 @@ class DINOv2BackboneWrapper(nn.Module):
         )
         return [feat0, feat1, feat2]
 
+    def _forward_final_only(self, images):
+        outputs = self._forward_dino(images)
+        patch_map = self._tokens_to_map(self._extract_patch_tokens(outputs))
+        return [patch_map]
+
     def _forward_intermediate_fixed_projected(self, images):
         layer_outputs = self._get_intermediate_layers(images)
         if len(layer_outputs) != len(self.layers):
@@ -224,6 +232,8 @@ class DINOv2BackboneWrapper(nn.Module):
     def forward(self, images):
         if self.feature_mode == "final_projected":
             return self._forward_final_projected(images)
+        if self.feature_mode == "final_only":
+            return self._forward_final_only(images)
         if self.feature_mode == "intermediate_fixed_projected":
             return self._forward_intermediate_fixed_projected(images)
         raise ValueError(f"Unsupported DINOv2 feature_mode: {self.feature_mode}")
@@ -236,12 +246,17 @@ class DINOv2BackboneWrapper(nn.Module):
         if self.feature_mode == "final_projected":
             return self.out_sizes
         grid_size = image_size // self.patch_size
+        if self.feature_mode == "final_only":
+            return (grid_size,)
         return (grid_size,) * len(self.layers)
 
 
 def print_dinov2_config(encoder, image_size=224):
     print("[DINOv2] feature_mode:", encoder.feature_mode)
-    print("[DINOv2] layers:", list(encoder.layers))
+    if encoder.feature_mode == "final_only":
+        print("[DINOv2] layers: final")
+    else:
+        print("[DINOv2] layers:", list(encoder.layers))
     print("[DINOv2] proj_dim:", encoder.proj_dim)
     print("[DINOv2] resize:", encoder.uses_resize)
     print("[DINOv2] feature dims:", encoder.feature_info.channels())
@@ -271,6 +286,8 @@ def dinov2_shape_test(
 
     if feature_mode == "final_projected":
         expected_shapes = [(2, 40, 56, 56), (2, 72, 28, 28), (2, 200, 14, 14)]
+    elif feature_mode == "final_only":
+        expected_shapes = [(2, encoder.embed_dim, 16, 16)]
     else:
         channels = encoder.embed_dim if proj_dim == 0 else proj_dim
         expected_shapes = [(2, channels, 16, 16)] * 3
