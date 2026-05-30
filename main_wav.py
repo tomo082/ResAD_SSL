@@ -59,6 +59,12 @@ def print_soft_codebook_config(args):
         print("[SoftCodebook] gamma warmup: epoch 0 starts with gamma_eff=0.0")
 
 
+def print_wavelet_config(args):
+    print("[Wavelet] wav_mode:", args.wav_mode)
+    print("[Wavelet] hf_skip_alpha:", args.hf_skip_alpha)
+    print("[Wavelet] wav_hf_normalize:", args.wav_hf_normalize)
+
+
 def main(args):
     if args.use_raw_vqops and args.use_soft_codebook:
         raise ValueError("Do not use raw VQOps and SoftCB together in this ablation.")
@@ -139,6 +145,7 @@ def main(args):
     print("[Matching] match_topk:", args.match_topk)
     print("[Matching] match_tau:", args.match_tau)
     print("[Matching] match_chunk_size:", args.match_chunk_size)
+    print_wavelet_config(args)
     print_raw_vqops_config(args)
     print_soft_codebook_config(args)
 
@@ -233,6 +240,8 @@ def main(args):
                     wav_mode=args.wav_mode,
                     ll_skip_alpha=args.ll_skip_alpha,
                     hf_gate_beta=args.hf_gate_beta,
+                    hf_skip_alpha=args.hf_skip_alpha,
+                    wav_hf_normalize=args.wav_hf_normalize,
                 )
             
             lvl_masks = []
@@ -435,9 +444,11 @@ if __name__ == "__main__":
     parser.add_argument("--wav_on", type=str, default="residual", choices=["residual"])
     parser.add_argument("--wave", type=str, default="haar", choices=["haar"])
     parser.add_argument("--hf_weight", type=float, default=1.0)
-    parser.add_argument("--wav_mode", type=str, default="ll_hf", choices=["ll_hf", "ll_only", "skip_ll", "hf_gate"])
+    parser.add_argument("--wav_mode", type=str, default="ll_hf", choices=["ll_hf", "ll_only", "skip_ll", "skip_hf", "hf_gate"])
     parser.add_argument("--ll_skip_alpha", type=float, default=0.5)
     parser.add_argument("--hf_gate_beta", type=float, default=1.0)
+    parser.add_argument("--hf_skip_alpha", type=float, default=0.75)
+    parser.add_argument("--wav_hf_normalize", action="store_true")
     parser.add_argument("--wav_shape_test", action="store_true")
     parser.add_argument("--dino_shape_test", action="store_true")
     parser.add_argument("--dinov2_feature_mode", type=str, default="final_projected", choices=DINOV2_FEATURE_MODES)

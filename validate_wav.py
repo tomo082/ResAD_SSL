@@ -65,6 +65,8 @@ def validate(args, encoder, constraintor, soft_codebook, raw_vq_ops, estimators,
                     wav_mode=args.wav_mode,
                     ll_skip_alpha=args.ll_skip_alpha,
                     hf_gate_beta=args.hf_gate_beta,
+                    hf_skip_alpha=getattr(args, "hf_skip_alpha", 0.75),
+                    wav_hf_normalize=getattr(args, "wav_hf_normalize", False),
                 )
 
             if getattr(args, "use_raw_vqops", False) and args.raw_vq_pos == "pre_constraintor":

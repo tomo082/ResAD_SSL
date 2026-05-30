@@ -9,7 +9,9 @@ def apply_residual_wavelet_filter(rfeatures: List[Tensor], wave: str = "haar",
                                   hf_weight: float = 1.0,
                                   wav_mode: str = "ll_hf",
                                   ll_skip_alpha: float = 0.5,
-                                  hf_gate_beta: float = 1.0) -> List[Tensor]:
+                                  hf_gate_beta: float = 1.0,
+                                  hf_skip_alpha: float = 0.75,
+                                  wav_hf_normalize: bool = False) -> List[Tensor]:
     """
     Apply a 1-level Haar DWT filter in residual space.
 
@@ -24,6 +26,8 @@ def apply_residual_wavelet_filter(rfeatures: List[Tensor], wave: str = "haar",
             wav_mode=wav_mode,
             ll_skip_alpha=ll_skip_alpha,
             hf_gate_beta=hf_gate_beta,
+            hf_skip_alpha=hf_skip_alpha,
+            wav_hf_normalize=wav_hf_normalize,
         )
         for rfeature in rfeatures
     ]
@@ -32,10 +36,12 @@ def apply_residual_wavelet_filter(rfeatures: List[Tensor], wave: str = "haar",
 def _apply_haar_residual_filter(x: Tensor, hf_weight: float = 1.0,
                                 wav_mode: str = "ll_hf",
                                 ll_skip_alpha: float = 0.5,
-                                hf_gate_beta: float = 1.0) -> Tensor:
+                                hf_gate_beta: float = 1.0,
+                                hf_skip_alpha: float = 0.75,
+                                wav_hf_normalize: bool = False) -> Tensor:
     if x.dim() != 4:
         raise ValueError(f"Residual feature must be 4D (B, C, H, W), but got {tuple(x.shape)}.")
-    if wav_mode not in {"ll_hf", "ll_only", "skip_ll", "hf_gate"}:
+    if wav_mode not in {"ll_hf", "ll_only", "skip_ll", "skip_hf", "hf_gate"}:
         raise ValueError(f"Unsupported wav_mode: {wav_mode}.")
 
     B, C, H, W = x.shape
@@ -62,10 +68,20 @@ def _apply_haar_residual_filter(x: Tensor, hf_weight: float = 1.0,
         return ll
     if wav_mode == "skip_ll":
         return ll_skip_alpha * x + (1.0 - ll_skip_alpha) * ll
+    if wav_mode == "skip_hf":
+        if wav_hf_normalize:
+            hf_energy = _match_hf_energy_scale(hf_energy, x)
+        return hf_skip_alpha * x + (1.0 - hf_skip_alpha) * hf_energy
 
     hf_norm = _normalize_hf_energy(hf_energy)
     gate = torch.sigmoid(hf_norm)
     return ll * (1.0 + hf_gate_beta * gate)
+
+
+def _match_hf_energy_scale(hf_energy: Tensor, x: Tensor) -> Tensor:
+    hf_mean = hf_energy.mean(dim=(-2, -1), keepdim=True)
+    x_mean = x.mean(dim=(-2, -1), keepdim=True)
+    return hf_energy / (hf_mean + 1e-6) * x_mean
 
 
 def _normalize_hf_energy(hf_energy: Tensor) -> Tensor:
@@ -93,7 +109,7 @@ def residual_wavelet_shape_test(device: str = "cpu") -> None:
         torch.randn(2, 16, 28, 28, device=device),
         torch.randn(2, 32, 15, 17, device=device),
     ]
-    for wav_mode in ("ll_hf", "ll_only", "skip_ll", "hf_gate"):
+    for wav_mode in ("ll_hf", "ll_only", "skip_ll", "skip_hf", "hf_gate"):
         filtered = apply_residual_wavelet_filter(
             rfeatures,
             wave="haar",
@@ -101,6 +117,8 @@ def residual_wavelet_shape_test(device: str = "cpu") -> None:
             wav_mode=wav_mode,
             ll_skip_alpha=0.5,
             hf_gate_beta=1.0,
+            hf_skip_alpha=0.75,
+            wav_hf_normalize=(wav_mode == "skip_hf"),
         )
         for before, after in zip(rfeatures, filtered):
             if before.shape != after.shape:

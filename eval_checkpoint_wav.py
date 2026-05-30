@@ -396,9 +396,11 @@ def build_parser():
     parser.add_argument("--wav_on", type=str, default="residual", choices=["residual"])
     parser.add_argument("--wave", type=str, default="haar", choices=["haar"])
     parser.add_argument("--hf_weight", type=float, default=1.0)
-    parser.add_argument("--wav_mode", type=str, default="ll_hf", choices=["ll_hf", "ll_only", "skip_ll", "hf_gate"])
+    parser.add_argument("--wav_mode", type=str, default="ll_hf", choices=["ll_hf", "ll_only", "skip_ll", "skip_hf", "hf_gate"])
     parser.add_argument("--ll_skip_alpha", type=float, default=0.5)
     parser.add_argument("--hf_gate_beta", type=float, default=1.0)
+    parser.add_argument("--hf_skip_alpha", type=float, default=0.75)
+    parser.add_argument("--wav_hf_normalize", action="store_true")
 
     parser.add_argument("--use_soft_codebook", action="store_true")
     parser.add_argument("--soft_cb_pos", type=str, default="post_constraintor", choices=["post_constraintor"])
