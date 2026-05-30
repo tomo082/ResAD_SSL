@@ -218,38 +218,31 @@ def main(args):
         train_loader = DataLoader(
             train_dataset, batch_size=8, shuffle=False, num_workers=8, drop_last=False
         )
-        layer1_features, layer2_features, layer3_features = [], [], []
+        layer_features = None
         
         for batch in tqdm.tqdm(train_loader):
             images, _, _, _ = batch
             with torch.no_grad():
                 patch_tokens = encoder(images.to(device))
-            layer1_features.append(patch_tokens[0])
-            layer2_features.append(patch_tokens[1])
-            layer3_features.append(patch_tokens[2]) 
-        layer1_features = torch.cat(layer1_features, dim=0)
-        layer2_features = torch.cat(layer2_features, dim=0)
-        layer3_features = torch.cat(layer3_features, dim=0)
-        print(layer1_features.shape)
-        print(layer2_features.shape)
-        print(layer3_features.shape)
-        #修正10/26
-        layer1_channels = layer1_features.shape[1]
-        layer2_channels = layer2_features.shape[1]
-        layer3_channels = layer3_features.shape[1]
+            if layer_features is None:
+                layer_features = [[] for _ in range(len(patch_tokens))]
+            for layer_id, patch_token in enumerate(patch_tokens):
+                layer_features[layer_id].append(patch_token)
 
-        layer1_features = layer1_features.permute(0, 2, 3, 1).reshape(-1, layer1_channels)
-        layer2_features = layer2_features.permute(0, 2, 3, 1).reshape(-1, layer2_channels)
-        layer3_features = layer3_features.permute(0, 2, 3, 1).reshape(-1, layer3_channels)
-        #修正終わり
+        layer_features = [torch.cat(features, dim=0) for features in layer_features]
+        flattened_features = []
+        for layer_id, features in enumerate(layer_features):
+            print(features.shape)
+            channels = features.shape[1]
+            flattened = features.permute(0, 2, 3, 1).reshape(-1, channels)
+            flattened_features.append(flattened)
+
         os.makedirs(os.path.join(args.save_dir, class_name), exist_ok=True)
         
         print(f"Attempting to save layer1.npy for {class_name}...")
-        np.save(os.path.join(args.save_dir, class_name, 'layer1.npy'), layer1_features.cpu().numpy())
-        print(f"Successfully saved layer1.npy for {class_name}.")
-        
-        np.save(os.path.join(args.save_dir, class_name, 'layer2.npy'), layer2_features.cpu().numpy())
-        np.save(os.path.join(args.save_dir, class_name, 'layer3.npy'), layer3_features.cpu().numpy())
+        for layer_id, features in enumerate(flattened_features):
+            np.save(os.path.join(args.save_dir, class_name, f'layer{layer_id + 1}.npy'), features.cpu().numpy())
+        print(f"Successfully saved {len(flattened_features)} layer file(s) for {class_name}.")
         
 
 def main2(args):
