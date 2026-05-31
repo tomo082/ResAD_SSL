@@ -21,6 +21,7 @@ from datasets.brats import BRATS
 from models.imagebind import ImageBindModel
 from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES, DINOV2_FEATURE_MODES
 from models.dinov2_backbone import print_dinov2_config
+from residual_wavelet import apply_feature_wavelet_filter
 from utils import load_weights
 
 
@@ -165,6 +166,26 @@ SETTINGS = {'mvtec': MVTEC.CLASS_NAMES, 'visa': VISA.CLASS_NAMES,
             'brats': BRATS.CLASS_NAMES}
 
 
+def apply_feature_wavelet_from_args(args, features):
+    return apply_feature_wavelet_filter(
+        features,
+        wave=args.wave,
+        feature_wav_mode=args.feature_wav_mode,
+        hf_weight=args.hf_weight,
+        ll_skip_alpha=args.ll_skip_alpha,
+        hf_skip_alpha=args.hf_skip_alpha,
+        wav_hf_normalize=args.wav_hf_normalize,
+    )
+
+
+def print_wavelet_config(args):
+    if not args.use_wav:
+        return
+    print("[Wavelet] wav_on:", args.wav_on)
+    print("[Wavelet] feature_wav_mode:", args.feature_wav_mode)
+    print("[Wavelet] wav_hf_normalize:", args.wav_hf_normalize)
+
+
 def main(args):
     image_size = 224
     device = 'cuda:0'
@@ -174,6 +195,7 @@ def main(args):
         print("[RefAug] angles:", args.ref_aug_angles)
         print("[RefAug] fill:", args.ref_aug_fill)
         print("[RefAug] num_ref_shot=4 is recommended when using rotation augmentation.")
+    print_wavelet_config(args)
     # TODO: Consider adding a DINOv2-specific normalization option and compare it with the existing reference transform.
     if args.backbone == 'wide_resnet50_2':
         encoder = timm.create_model('wide_resnet50_2', features_only=True,
@@ -224,6 +246,8 @@ def main(args):
             images, _, _, _ = batch
             with torch.no_grad():
                 patch_tokens = encoder(images.to(device))
+                if args.use_wav and args.wav_on == "feature":
+                    patch_tokens = apply_feature_wavelet_from_args(args, patch_tokens)
             if layer_features is None:
                 layer_features = [[] for _ in range(len(patch_tokens))]
             for layer_id, patch_token in enumerate(patch_tokens):
@@ -320,6 +344,14 @@ if __name__ == '__main__':
     parser.add_argument("--dinov2_feature_mode", type=str, default="final_projected", choices=DINOV2_FEATURE_MODES)
     parser.add_argument("--dinov2_layers", type=int, nargs="+", default=[4, 8, 12])
     parser.add_argument("--dinov2_proj_dim", type=int, default=256)
+    parser.add_argument("--use_wav", action="store_true")
+    parser.add_argument("--wav_on", type=str, default="residual", choices=["residual", "feature"])
+    parser.add_argument("--wave", type=str, default="haar", choices=["haar"])
+    parser.add_argument("--hf_weight", type=float, default=1.0)
+    parser.add_argument("--feature_wav_mode", type=str, default="ll_only", choices=["ll_only", "hf_only", "ll_hf", "skip_ll", "skip_hf"])
+    parser.add_argument("--ll_skip_alpha", type=float, default=0.5)
+    parser.add_argument("--hf_skip_alpha", type=float, default=0.75)
+    parser.add_argument("--wav_hf_normalize", action="store_true")
     parser.add_argument("--ref_aug", type=str, default="none", choices=["none", "rotate"])
     parser.add_argument("--ref_aug_angles", type=int, nargs="+", default=[0, 45, 90, 135, 180, 225, 270, 315])
     parser.add_argument("--ref_aug_fill", type=str, default="reflect", choices=["reflect", "constant"])

@@ -9,12 +9,34 @@ from models.modules import get_position_encoding
 from models.utils import get_logp
 from utils import get_residual_features_by_mode, get_matched_ref_features_by_mode
 from utils import calculate_metrics
-from residual_wavelet import apply_residual_wavelet_filter
+from residual_wavelet import apply_feature_wavelet_filter, apply_residual_wavelet_filter
 from models.soft_codebook import apply_soft_codebook_flat_if_enabled
 from raw_vqops import apply_raw_vqops_if_enabled
 from losses.utils import get_logp_a
 
 warnings.filterwarnings('ignore')
+
+
+def apply_feature_wavelet_from_args(args, features):
+    return apply_feature_wavelet_filter(
+        features,
+        wave=args.wave,
+        feature_wav_mode=args.feature_wav_mode,
+        hf_weight=args.hf_weight,
+        ll_skip_alpha=args.ll_skip_alpha,
+        hf_skip_alpha=getattr(args, "hf_skip_alpha", 0.75),
+        wav_hf_normalize=getattr(args, "wav_hf_normalize", False),
+    )
+
+
+def assert_feature_shapes_match(features, matched_features, prefix):
+    for level, (feature, matched) in enumerate(zip(features, matched_features)):
+        if feature.shape != matched.shape:
+            raise ValueError(
+                f"{prefix} level {level} shape mismatch: "
+                f"feature={tuple(feature.shape)}, matched={tuple(matched.shape)}"
+            )
+
 
 def validate(args, encoder, constraintor, soft_codebook, raw_vq_ops, estimators, test_loader, ref_features, device, class_name, epoch=None):
     if raw_vq_ops is not None:
@@ -44,6 +66,8 @@ def validate(args, encoder, constraintor, soft_codebook, raw_vq_ops, estimators,
         
         with torch.no_grad():
             features = encoder(image)
+            if args.use_wav and args.wav_on == 'feature':
+                features = apply_feature_wavelet_from_args(args, features)
             mfeatures = get_matched_ref_features_by_mode(
                 features,
                 ref_features,
@@ -52,6 +76,7 @@ def validate(args, encoder, constraintor, soft_codebook, raw_vq_ops, estimators,
                 tau=args.match_tau,
                 chunk_size=args.match_chunk_size,
             )
+            assert_feature_shapes_match(features, mfeatures, "validate matching")
             rfeatures = get_residual_features_by_mode(
                 features,
                 mfeatures,

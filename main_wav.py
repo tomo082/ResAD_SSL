@@ -25,10 +25,11 @@ from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES, DINO
 from models.dinov2_backbone import dinov2_shape_test, print_dinov2_config
 from models.soft_codebook import SoftCodebookAdapterList
 from models.vq import MultiScaleVQ
-from utils import init_seeds, get_residual_features_by_mode, get_mc_matched_ref_features_by_mode, get_mc_reference_features
+from utils import init_seeds, get_residual_features_by_mode, get_mc_matched_ref_features_by_mode
+from utils import get_mc_reference_features, get_mc_reference_features_wav
 from utils import BoundaryAverager
 from raw_vqops import apply_raw_vqops_if_enabled, print_raw_vqops_config, train_raw_vqops_if_enabled
-from residual_wavelet import apply_residual_wavelet_filter, residual_wavelet_shape_test
+from residual_wavelet import apply_feature_wavelet_filter, apply_residual_wavelet_filter, residual_wavelet_shape_test
 from losses.loss import calculate_log_barrier_bi_occ_loss
 from classes import VISA_TO_MVTEC, MVTEC_TO_VISA, MVTEC_TO_BTAD, MVTEC_TO_MVTEC3D
 from classes import MVTEC_TO_MPDD, MVTEC_TO_MVTECLOCO, MVTEC_TO_BRATS
@@ -60,9 +61,32 @@ def print_soft_codebook_config(args):
 
 
 def print_wavelet_config(args):
+    print("[Wavelet] wav_on:", args.wav_on)
     print("[Wavelet] wav_mode:", args.wav_mode)
+    print("[Wavelet] feature_wav_mode:", args.feature_wav_mode)
     print("[Wavelet] hf_skip_alpha:", args.hf_skip_alpha)
     print("[Wavelet] wav_hf_normalize:", args.wav_hf_normalize)
+
+
+def apply_feature_wavelet_from_args(args, features):
+    return apply_feature_wavelet_filter(
+        features,
+        wave=args.wave,
+        feature_wav_mode=args.feature_wav_mode,
+        hf_weight=args.hf_weight,
+        ll_skip_alpha=args.ll_skip_alpha,
+        hf_skip_alpha=args.hf_skip_alpha,
+        wav_hf_normalize=args.wav_hf_normalize,
+    )
+
+
+def assert_feature_shapes_match(features, matched_features, prefix):
+    for level, (feature, matched) in enumerate(zip(features, matched_features)):
+        if feature.shape != matched.shape:
+            raise ValueError(
+                f"{prefix} level {level} shape mismatch: "
+                f"feature={tuple(feature.shape)}, matched={tuple(matched.shape)}"
+            )
 
 
 def main(args):
@@ -216,8 +240,26 @@ def main(args):
             
             with torch.no_grad():
                 features = encoder(images)
+                if args.use_wav and args.wav_on == 'feature':
+                    features = apply_feature_wavelet_from_args(args, features)
             
-            ref_features = get_mc_reference_features(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot)
+            if args.use_wav and args.wav_on == 'feature':
+                ref_features = get_mc_reference_features_wav(
+                    encoder,
+                    args.train_dataset_dir,
+                    class_names,
+                    images.device,
+                    args.train_ref_shot,
+                    wav_filter=lambda feature: apply_feature_wavelet_from_args(args, [feature])[0],
+                )
+            else:
+                ref_features = get_mc_reference_features(
+                    encoder,
+                    args.train_dataset_dir,
+                    class_names,
+                    images.device,
+                    args.train_ref_shot,
+                )
             mfeatures = get_mc_matched_ref_features_by_mode(
                 features,
                 class_names,
@@ -227,6 +269,7 @@ def main(args):
                 tau=args.match_tau,
                 chunk_size=args.match_chunk_size,
             )
+            assert_feature_shapes_match(features, mfeatures, "train matching")
             rfeatures = get_residual_features_by_mode(
                 features,
                 mfeatures,
@@ -441,10 +484,11 @@ if __name__ == "__main__":
     parser.add_argument("--raw_vq_debug", action="store_true")
     
     parser.add_argument("--use_wav", action="store_true")
-    parser.add_argument("--wav_on", type=str, default="residual", choices=["residual"])
+    parser.add_argument("--wav_on", type=str, default="residual", choices=["residual", "feature"])
     parser.add_argument("--wave", type=str, default="haar", choices=["haar"])
     parser.add_argument("--hf_weight", type=float, default=1.0)
     parser.add_argument("--wav_mode", type=str, default="ll_hf", choices=["ll_hf", "ll_only", "skip_ll", "skip_hf", "hf_gate"])
+    parser.add_argument("--feature_wav_mode", type=str, default="ll_only", choices=["ll_only", "hf_only", "ll_hf", "skip_ll", "skip_hf"])
     parser.add_argument("--ll_skip_alpha", type=float, default=0.5)
     parser.add_argument("--hf_gate_beta", type=float, default=1.0)
     parser.add_argument("--hf_skip_alpha", type=float, default=0.75)
