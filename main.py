@@ -57,6 +57,8 @@ def build_feature_encoder(args):
             layers=args.clip_layers,
             image_size=args.clip_image_size,
             freeze=True,
+            weight_source=args.clip_weight_source,
+            checkpoint=args.clip_checkpoint,
         ).to(args.device)
         encoder.eval()
         return encoder, encoder.feature_info.channels()
@@ -355,6 +357,8 @@ if __name__ == "__main__":
     parser.add_argument('--feature_backbone', type=str, default="original", choices=["original", "clip_raw"])
     parser.add_argument('--clip_model', type=str, default="ViT-L-14-336")
     parser.add_argument('--clip_pretrained', type=str, default="openai")
+    parser.add_argument('--clip_weight_source', type=str, default="open_clip", choices=["open_clip", "openai_local"])
+    parser.add_argument('--clip_checkpoint', type=str, default="")
     parser.add_argument('--clip_layers', type=int, nargs="+", default=[6, 12, 24])
     parser.add_argument('--clip_image_size', type=int, default=518)
     parser.add_argument('--rank', type=int, default="0")    
