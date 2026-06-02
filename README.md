@@ -53,7 +53,7 @@ CUDA_VISIBLE_DEVICES=0 python extract_ref_features.py \
   --output_dir ./ref_features/clip_raw/mvtec_screw_4shot \
   --feature_backbone clip_raw \
   --clip_model ViT-L-14-336 \
-  --clip_pretrained openai \
+  --clip_weight_source openai_local \
   --clip_layers 6 12 24 \
   --clip_image_size 518
 ```
@@ -67,7 +67,7 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
   --test_ref_feature_dir ./ref_features/clip_raw/mvtec_screw_4shot \
   --feature_backbone clip_raw \
   --clip_model ViT-L-14-336 \
-  --clip_pretrained openai \
+  --clip_weight_source openai_local \
   --clip_layers 6 12 24 \
   --clip_image_size 518 \
   --disable_vqops \
@@ -78,6 +78,10 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
 `--clip_layers` are 1-indexed transformer block numbers. The default
 `6 12 24` captures three raw patch-token feature maps and reshapes them from
 `[B, N, C]` to `[B, C, H, W]`.
+`--clip_weight_source openai_local` downloads OpenAI CLIP `.pt` weights into
+`~/.cache/clip` and reuses the cached file on later runs, avoiding the Hugging
+Face Hub `open_clip_model.safetensors` path. You can also pass
+`--clip_checkpoint /path/to/ViT-L-14-336px.pt` to use an existing local file.
 `--disable_vqops` skips VQOps training and EFDM application so CLIP raw features
 can be evaluated without the ResAD++ VQ branch. Omit it to keep the original
 ResAD behavior.
