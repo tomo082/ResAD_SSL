@@ -8,7 +8,10 @@ try:
     from timm.layers import create_act_layer
 except ImportError:
     from timm.models.layers import create_act_layer
-from timm.models.layers.helpers import make_divisible
+try:
+    from timm.layers import make_divisible
+except ImportError:
+    from timm.models.layers import make_divisible
 from einops import rearrange
 
 
