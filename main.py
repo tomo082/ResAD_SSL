@@ -363,7 +363,7 @@ if __name__ == "__main__":
     parser.add_argument('--clip_layers', type=int, nargs="+", default=[6, 12, 24])
     parser.add_argument('--clip_image_size', type=int, default=518)
     parser.add_argument('--rank', type=int, default="0")   
-    parser.add_argument('--first_epoch', type=int, default="10")   
+    parser.add_argument('--first_epoch', type=int, default=10)   
     
     # flow parameters
     parser.add_argument('--flow_arch', type=str, default='conditional_flow_model')
