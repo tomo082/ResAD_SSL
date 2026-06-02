@@ -37,6 +37,51 @@ python extract_ref_features.py --dataset visa --few_shot_dir ./data/4shot/visa -
 python extract_ref_features.py --dataset mvtec3d --few_shot_dir ./data/4shot/mvtec3d --save_dir ./ref_features/w50/mvtec3d_4shot
 ```
 
+### CLIP Raw Patch Features
+
+The default ResAD feature extractor remains unchanged. To compare against frozen
+pretrained CLIP raw patch features, set `--feature_backbone clip_raw`. This uses
+`open_clip` image-encoder transformer block outputs directly; no AdaCLIP prompt,
+projection, text similarity, or HSF feature is used.
+
+Example reference feature extraction for one MVTec class:
+```bash
+CUDA_VISIBLE_DEVICES=0 python extract_ref_features.py \
+  --dataset mvtec \
+  --class_name screw \
+  --dataset_dir /path/to/mvtec \
+  --output_dir ./ref_features/clip_raw/mvtec_screw_4shot \
+  --feature_backbone clip_raw \
+  --clip_model ViT-L-14-336 \
+  --clip_pretrained openai \
+  --clip_layers 6 12 24 \
+  --clip_image_size 518
+```
+
+Example training/evaluation with CLIP raw features:
+```bash
+CUDA_VISIBLE_DEVICES=0 python main.py \
+  --setting mvtec_to_mvtec \
+  --train_dataset_dir /path/to/mvtec \
+  --test_dataset_dir /path/to/mvtec \
+  --test_ref_feature_dir ./ref_features/clip_raw/mvtec_screw_4shot \
+  --feature_backbone clip_raw \
+  --clip_model ViT-L-14-336 \
+  --clip_pretrained openai \
+  --clip_layers 6 12 24 \
+  --clip_image_size 518 \
+  --disable_vqops \
+  --num_ref_shot 4 \
+  --device cuda:0
+```
+
+`--clip_layers` are 1-indexed transformer block numbers. The default
+`6 12 24` captures three raw patch-token feature maps and reshapes them from
+`[B, N, C]` to `[B, C, H, W]`.
+`--disable_vqops` skips VQOps training and EFDM application so CLIP raw features
+can be evaluated without the ResAD++ VQ branch. Omit it to keep the original
+ResAD behavior.
+
 
 ## Training and Evaluating
 In this repository, we use ``wide_resnet50`` as the feature extractor by default.

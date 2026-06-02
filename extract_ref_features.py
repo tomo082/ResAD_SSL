@@ -21,6 +21,7 @@ from datasets.brats import BRATS
 from models.imagebind import ImageBindModel
 from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES, DINOV2_FEATURE_MODES
 from models.dinov2_backbone import print_dinov2_config
+from models.clip_feature_extractor import CLIPRawFeatureExtractor
 from residual_wavelet import apply_feature_wavelet_filter
 from utils import load_weights
 
@@ -186,26 +187,37 @@ def print_wavelet_config(args):
     print("[Wavelet] wav_hf_normalize:", args.wav_hf_normalize)
 
 
-def main(args):
-    image_size = 224
-    device = 'cuda:0'
-    root_dir = args.few_shot_dir
-    if args.ref_aug == "rotate":
-        print("[RefAug] mode:", args.ref_aug)
-        print("[RefAug] angles:", args.ref_aug_angles)
-        print("[RefAug] fill:", args.ref_aug_fill)
-        print("[RefAug] num_ref_shot=4 is recommended when using rotation augmentation.")
-    print_wavelet_config(args)
-    # TODO: Consider adding a DINOv2-specific normalization option and compare it with the existing reference transform.
+def get_feature_image_size(args):
+    if args.feature_backbone == "clip_raw":
+        return args.clip_image_size
+    return 224
+
+
+def build_feature_encoder(args, device):
+    if args.feature_backbone == "clip_raw":
+        if len(args.clip_layers) != 3:
+            raise ValueError("clip_raw currently expects exactly 3 clip_layers for ResAD reference features.")
+        encoder = CLIPRawFeatureExtractor(
+            model_name=args.clip_model,
+            pretrained=args.clip_pretrained,
+            layers=args.clip_layers,
+            image_size=args.clip_image_size,
+            freeze=True,
+        ).to(device)
+        encoder.eval()
+        return encoder
+
+    if args.feature_backbone != "original":
+        raise ValueError(f"Unsupported feature_backbone: {args.feature_backbone}")
     if args.backbone == 'wide_resnet50_2':
         encoder = timm.create_model('wide_resnet50_2', features_only=True,
-                out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
-        encoder = encoder.to(device)
-    elif args.backbone == 'tf_efficientnet_b6':#10/26追加
+                out_indices=(1, 2, 3), pretrained=True).eval()
+        return encoder.to(device)
+    if args.backbone == 'tf_efficientnet_b6':
         encoder = timm.create_model('tf_efficientnet_b6', features_only=True,
-                out_indices=(1, 2, 3), pretrained=True).eval()  # the pretrained checkpoint will be in /home/.cache/torch/hub/checkpoints/
-        encoder = encoder.to(device)
-    elif args.backbone in DINOV2_BACKBONES:
+                out_indices=(1, 2, 3), pretrained=True).eval()
+        return encoder.to(device)
+    if args.backbone in DINOV2_BACKBONES:
         encoder = DINOv2BackboneWrapper(
             model_name=args.backbone,
             out_dims=(40, 72, 200),
@@ -216,14 +228,33 @@ def main(args):
             proj_dim=args.dinov2_proj_dim,
         ).to(device)
         encoder.eval()
-        print_dinov2_config(encoder, image_size=image_size)
+        print_dinov2_config(encoder, image_size=get_feature_image_size(args))
+        return encoder
+    raise ValueError(f"Unsupported backbone: {args.backbone}")
+
+
+def main(args):
+    image_size = get_feature_image_size(args)
+    device = args.device
+    root_dir = args.dataset_dir or args.few_shot_dir
+    save_dir = args.output_dir or args.save_dir
+    if args.ref_aug == "rotate":
+        print("[RefAug] mode:", args.ref_aug)
+        print("[RefAug] angles:", args.ref_aug_angles)
+        print("[RefAug] fill:", args.ref_aug_fill)
+        print("[RefAug] num_ref_shot=4 is recommended when using rotation augmentation.")
+    print_wavelet_config(args)
+    # TODO: Consider adding a DINOv2-specific normalization option and compare it with the existing reference transform.
+    encoder = build_feature_encoder(args, device)
     feat_dims = encoder.feature_info.channels()    
     decoders = [load_flow_model(args, feat_dim) for feat_dim in feat_dims]
     decoders = [decoder.to(args.device) for decoder in decoders]
     
     if args.bgadweight_dir:
         load_weights(encoder, decoders, args.bgadweight_dir)
-    if args.dataset in SETTINGS.keys():
+    if args.class_name:
+        CLASS_NAMES = [args.class_name]
+    elif args.dataset in SETTINGS.keys():
         CLASS_NAMES = SETTINGS[args.dataset]
     else:
         raise ValueError(f"Dataset setting must be in {SETTINGS.keys()}, but got {args.dataset}.")
@@ -261,11 +292,11 @@ def main(args):
             flattened = features.permute(0, 2, 3, 1).reshape(-1, channels)
             flattened_features.append(flattened)
 
-        os.makedirs(os.path.join(args.save_dir, class_name), exist_ok=True)
+        os.makedirs(os.path.join(save_dir, class_name), exist_ok=True)
         
         print(f"Attempting to save layer1.npy for {class_name}...")
         for layer_id, features in enumerate(flattened_features):
-            np.save(os.path.join(args.save_dir, class_name, f'layer{layer_id + 1}.npy'), features.cpu().numpy())
+            np.save(os.path.join(save_dir, class_name, f'layer{layer_id + 1}.npy'), features.cpu().numpy())
         print(f"Successfully saved {len(flattened_features)} layer file(s) for {class_name}.")
         
 
@@ -336,11 +367,19 @@ def main2(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default="mvtec")
+    parser.add_argument('--class_name', type=str, default="")
+    parser.add_argument('--dataset_dir', type=str, default="")
     parser.add_argument('--few_shot_dir', type=str, default="./4shot/mvtec")
     parser.add_argument('--flow_arch', type=str, default='conditional_flow_model')
     parser.add_argument('--bgadweight_dir', type=str, default="")# 12/16追加
     parser.add_argument('--save_dir', type=str, default="./ref_features/w50/mvtec_4shot")
+    parser.add_argument('--output_dir', type=str, default="")
     parser.add_argument('--backbone', type=str, default="wide_resnet50_2")#10/26追加
+    parser.add_argument('--feature_backbone', type=str, default="original", choices=["original", "clip_raw"])
+    parser.add_argument('--clip_model', type=str, default="ViT-L-14-336")
+    parser.add_argument('--clip_pretrained', type=str, default="openai")
+    parser.add_argument('--clip_layers', type=int, nargs="+", default=[6, 12, 24])
+    parser.add_argument('--clip_image_size', type=int, default=518)
     parser.add_argument("--dinov2_feature_mode", type=str, default="final_projected", choices=DINOV2_FEATURE_MODES)
     parser.add_argument("--dinov2_layers", type=int, nargs="+", default=[4, 8, 12])
     parser.add_argument("--dinov2_proj_dim", type=int, default=256)

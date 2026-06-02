@@ -313,7 +313,7 @@ def get_random_normal_images(root, class_name, num_shot=4):
     return normal_paths
 
 
-def get_mc_reference_features(encoder, root, class_names, device, num_shot=4):
+def get_mc_reference_features(encoder, root, class_names, device, num_shot=4, img_size=224):
     """
     Get reference features for multiple classes.
     """
@@ -321,7 +321,7 @@ def get_mc_reference_features(encoder, root, class_names, device, num_shot=4):
     class_names = np.unique(class_names)
     for class_name in class_names:
         normal_paths = get_random_normal_images(root, class_name, num_shot)
-        images = load_and_transform_vision_data(normal_paths, device)
+        images = load_and_transform_vision_data(normal_paths, device, image_size=img_size)
         with torch.no_grad():
             features = encoder(images)
             for l in range(len(features)):
@@ -329,7 +329,7 @@ def get_mc_reference_features(encoder, root, class_names, device, num_shot=4):
                 features[l] = features[l].permute(0, 2, 3, 1).reshape(-1, c)
             reference_features[class_name] = features
     return reference_features
-def get_mc_reference_features_wav(encoder, root, class_names, device, num_shot=4, wav_filter=None):
+def get_mc_reference_features_wav(encoder, root, class_names, device, num_shot=4, wav_filter=None, img_size=224):
     """
     Get reference features for multiple classes.
     """
@@ -337,7 +337,7 @@ def get_mc_reference_features_wav(encoder, root, class_names, device, num_shot=4
     class_names = np.unique(class_names)
     for class_name in class_names:
         normal_paths = get_random_normal_images(root, class_name, num_shot)
-        images = load_and_transform_vision_data(normal_paths, device)
+        images = load_and_transform_vision_data(normal_paths, device, image_size=img_size)
         with torch.no_grad():
             features = encoder(images)
             
@@ -353,15 +353,15 @@ def get_mc_reference_features_wav(encoder, root, class_names, device, num_shot=4
             reference_features[class_name] = features
     return reference_features
 
-def load_and_transform_vision_data(image_paths, device):
+def load_and_transform_vision_data(image_paths, device, image_size=224):
     if image_paths is None:
         return None
 
     image_ouputs = []
     for image_path in image_paths:
         data_transform = T.Compose([
-                T.Resize(224, T.InterpolationMode.BICUBIC),
-                T.CenterCrop(224),
+                T.Resize(image_size, T.InterpolationMode.BICUBIC),
+                T.CenterCrop(image_size),
                 T.ToTensor(),
                 T.Compose([T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])])
         with open(image_path, "rb") as fopen:

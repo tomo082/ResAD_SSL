@@ -15,7 +15,8 @@ warnings.filterwarnings('ignore')
 
 
 def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_features, device, class_name):
-    vq_ops.eval()
+    if vq_ops is not None:
+        vq_ops.eval()
     constraintor.eval()
     for estimator in estimators:  
         estimator.eval()
@@ -36,7 +37,11 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
         size = image.shape[-1]
         
         with torch.no_grad():
-            if args.backbone == 'wide_resnet50_2':
+            if getattr(args, "feature_backbone", "original") == "clip_raw":
+                features = encoder(image)
+                mfeatures = get_matched_ref_features(features, ref_features)
+                rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
+            elif args.backbone == 'wide_resnet50_2':
                 features = encoder(image)
                 mfeatures = get_matched_ref_features(features, ref_features)
                 rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
@@ -60,8 +65,9 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
                 mfeatures = get_matched_ref_features(features, ref_features)
                 rfeatures = get_residual_features(features, mfeatures)
             
-            fdm_features = vq_ops(rfeatures, train=False)
-            rfeatures = applying_EFDM(rfeatures, fdm_features, alpha=args.fdm_alpha)
+            if vq_ops is not None:
+                fdm_features = vq_ops(rfeatures, train=False)
+                rfeatures = applying_EFDM(rfeatures, fdm_features, alpha=args.fdm_alpha)
             rfeatures = constraintor(*rfeatures)
         
             for l in range(args.feature_levels):
