@@ -34,7 +34,7 @@ from classes import CAPSULES_TO_CAPSULES
 warnings.filterwarnings('ignore')
 
 TOTAL_SHOT = 4  # total few-shot reference samples
-FIRST_STAGE_EPOCH = 10
+FIRST_STAGE_EPOCH = args.first_epoch
 SETTINGS = {'visa_to_mvtec': VISA_TO_MVTEC, 'mvtec_to_visa': MVTEC_TO_VISA,
             'mvtec_to_btad': MVTEC_TO_BTAD, 'mvtec_to_mvtec3d': MVTEC_TO_MVTEC3D,
             'mvtec_to_mpdd': MVTEC_TO_MPDD, 'mvtec_to_mvtecloco': MVTEC_TO_MVTECLOCO,
@@ -361,7 +361,8 @@ if __name__ == "__main__":
     parser.add_argument('--clip_checkpoint', type=str, default="")
     parser.add_argument('--clip_layers', type=int, nargs="+", default=[6, 12, 24])
     parser.add_argument('--clip_image_size', type=int, default=518)
-    parser.add_argument('--rank', type=int, default="0")    
+    parser.add_argument('--rank', type=int, default="0")   
+    parser.add_argument('--first_epoch', type=int, default="10")   
     
     # flow parameters
     parser.add_argument('--flow_arch', type=str, default='conditional_flow_model')
