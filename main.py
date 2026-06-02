@@ -34,7 +34,7 @@ from classes import CAPSULES_TO_CAPSULES
 warnings.filterwarnings('ignore')
 
 TOTAL_SHOT = 4  # total few-shot reference samples
-FIRST_STAGE_EPOCH = args.first_epoch
+#FIRST_STAGE_EPOCH = args.first_epoch
 SETTINGS = {'visa_to_mvtec': VISA_TO_MVTEC, 'mvtec_to_visa': MVTEC_TO_VISA,
             'mvtec_to_btad': MVTEC_TO_BTAD, 'mvtec_to_mvtec3d': MVTEC_TO_MVTEC3D,
             'mvtec_to_mpdd': MVTEC_TO_MPDD, 'mvtec_to_mvtecloco': MVTEC_TO_MVTECLOCO,
@@ -79,6 +79,7 @@ def build_feature_encoder(args):
 
 
 def main(args):
+    FIRST_STAGE_EPOCH = args.first_epoch
     if args.setting in SETTINGS.keys():
         CLASSES = SETTINGS[args.setting]
     else:
