@@ -281,30 +281,7 @@ def main(args):
                 s1_res.append(metrics['scores1'])
                 s2_res.append(metrics['scores2'])
                 s_res.append(metrics['scores'])
-                # 可視化結果を保存するのは最終エポックのみ
-                if epoch == args.epochs - 1: # 最終エポックの場合のみ可視化を保存
-                    # `validate` 関数が返す `metrics` から必要なデータを取得
-                    scores = metrics['scores_map']
-                    gts_masks = metrics['gt_masks_raw']
-                    images_raw = metrics['images_raw']
-
-                    # Visualizerを使ってプロット
-                    # クラスごとにサブディレクトリを作成
-                    output_class_dir = os.path.join(visualization_output_dir, class_name_eval, f'final_epoch') # ディレクトリ名を'final_epoch'に固定
-                    os.makedirs(output_class_dir, exist_ok=True)
-                    my_visualizer.set_prefix(f'{class_name_eval}_final_epoch') # プレフィックスをクラス名と最終エポックに設定
-                    my_visualizer.root = output_class_dir # 保存先ディレクトリを更新
-
-                    my_visualizer.plot(images_raw, scores, gts_masks)
-                    print(f"  - クラス '{class_name_eval}': 最終エポックの可視化結果を {output_class_dir} に保存しました。")
-                # --- 変更点ここまで ---            
-
-                # 各クラスの評価結果から特徴量とラベルデータを一時的に保存
-                current_epoch_class_data_for_saving[class_name_eval] = {
-                    'features': metrics['features'],
-                    'anomaly_types': metrics['anomaly_types'],
-                    'gts_labels': metrics['gts_labels']
-                    }             
+       
             s1_res = np.array(s1_res)
             s2_res = np.array(s2_res)
             s_res = np.array(s_res)
