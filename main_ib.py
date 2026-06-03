@@ -156,10 +156,6 @@ def main(args):
             ref_features = get_mc_reference_features(encoder, args.train_dataset_dir, class_names, images.device, args.train_ref_shot)
             mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
             rfeatures = get_residual_features(features, mfeatures)
-            if args.residual=='False':
-                rfeatures = features
-            else:
-                rfeatures = rfeatures
             
             lvl_masks = []
             for l in range(args.feature_levels):
@@ -383,7 +379,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_path', type=str, default="./checkpoints/")
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--backbone', type=str, default="imagebind")
-    parser.add_argument('--residual', type = True, default=True)
+    #parser.add_argument('--residual', type = True, default=True)
     
     # flow parameters
     parser.add_argument('--flow_arch', type=str, default='flow_model')
