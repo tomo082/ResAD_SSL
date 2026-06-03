@@ -321,40 +321,13 @@ def main(args):
             if img_auc > best_img_auc: #pix_aupro > best_pro:
                 os.makedirs(args.checkpoint_path, exist_ok=True)
                 best_img_auc = img_auc #best_pro = pix_aupro
-                state_dict = {'vq_ops': vq_ops.state_dict(),
-                              'constraintor': constraintor.state_dict(),
+                state_dict = { 'constraintor': constraintor.state_dict(),
                               'estimators': [estimator.state_dict() for estimator in estimators]}
-                torch.save(state_dict, os.path.join(args.checkpoint_path, f'{args.setting}_checkpoints.pth'))
-                # 新しい特徴量保存ディレクトリを作成
-                features_save_dir = os.path.join(args.checkpoint_path, 'features_for_analysis')
-                os.makedirs(features_save_dir, exist_ok=True) 
-                # -- ここから変更 --
-                # 各クラスについて、最良スコア時のデータを保存
-                for class_name_to_save, data in current_epoch_class_data_for_saving.items():
-                    # クラス名の下にファイルを保存するパスを構築
-                    class_specific_save_dir = os.path.join(features_save_dir, class_name_to_save)
-                    os.makedirs(class_specific_save_dir, exist_ok=True)
+                if vq_ops is not None:
+                    state_dict['vq_ops'] = vq_ops.state_dict()
+                torch.save(state_dict, os.path.join(args.checkpoint_path, f'{args.setting}_epoch_{epoch}_checkpoints.pth'))
+                #torch.save(state_dict, os.path.join(args.checkpoint_path, f'{args.setting}_checkpoints.pth'))
 
-                    # ファイル名から epoch 番号を削除
-                    # これにより、常に同じファイル名で上書き保存され、
-                    # 最終的にベストスコア時のデータだけが残る
-                    features_filename = os.path.join(class_specific_save_dir, 'best_features.npy')
-                    anomaly_types_filename = os.path.join(class_specific_save_dir, 'best_anomaly_types.npy')
-                    gts_labels_filename = os.path.join(class_specific_save_dir, 'best_gts_labels.npy')
-
-                    np.save(features_filename, data['features'])
-                    
-                    # anomaly_types をテキストファイルとして保存
-                    with open(anomaly_types_filename, 'w') as f:
-                        for item in data['anomaly_types']:
-                            f.write(str(item) + '\n') # 各要素を1行ずつ書き込む
-                            
-                    np.save(gts_labels_filename, data['gts_labels'])
-                    print(f"  - クラス '{class_name_to_save}': 最良スコア時のデータを {class_specific_save_dir} に上書き保存しました。")
-                # -- 変更ここまで --
-                
-                # 最良エポックのデータなので、今後の可視化のためにこれを覚えておく
-                best_epoch_class_data = current_epoch_class_data_for_saving.copy()
 
 
 def load_mc_reference_features(root_dir: str, class_names, device: torch.device, num_shot=4):
