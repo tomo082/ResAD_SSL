@@ -50,39 +50,39 @@ def main(args):
         raise ValueError(f"Dataset setting must be in {SETTINGS.keys()}, but got {args.setting}.")
     if args.train_dataset == 'mvtec_few':
         train_dataset1 = MVTECFEW(args.train_dataset_dir, class_name=CLASSES['seen'], train=True, 
-                               normalize="w50",
+                               normalize="imagebind",
                                img_size=224, crp_size=224, msk_size=224, msk_crp_size=224)
         train_loader1 = DataLoader(
             train_dataset1, batch_size=args.batch_size, shuffle=True, num_workers=8, drop_last=True
         )
         train_dataset2 = MVTECFEWANO(args.train_dataset_dir, class_name=CLASSES['seen'], train=True, 
-                               normalize='w50',
+                               normalize="imagebind",
                                img_size=224, crp_size=224, msk_size=224, msk_crp_size=224)
         train_loader2 = DataLoader(
             train_dataset2, batch_size=args.batch_size, shuffle=True, num_workers=8, drop_last=True
         )
     elif CLASSES['seen'][0] in MVTEC.CLASS_NAMES:  # from mvtec to other datasets
         train_dataset1 = MVTEC(args.train_dataset_dir, class_name=CLASSES['seen'], train=True, 
-                               normalize="w50",
+                               normalize="imagebind",
                                img_size=224, crp_size=224, msk_size=224, msk_crp_size=224)
         train_loader1 = DataLoader(
             train_dataset1, batch_size=args.batch_size, shuffle=True, num_workers=8, drop_last=True
         )
         train_dataset2 = MVTECANO(args.train_dataset_dir, class_name=CLASSES['seen'], train=True, 
-                                  normalize='w50',
+                                  normalize="imagebind",
                                   img_size=224, crp_size=224, msk_size=224, msk_crp_size=224)
         train_loader2 = DataLoader(
             train_dataset2, batch_size=args.batch_size, shuffle=True, num_workers=8, drop_last=True
         )
     else:  # from visa to mvtec
         train_dataset1 = VISA(args.train_dataset_dir, class_name=CLASSES['seen'], train=True,
-                               normalize="w50",
+                               normalize="imagebind",
                                img_size=224, crp_size=224, msk_size=224, msk_crp_size=224)
         train_loader1 = DataLoader(
             train_dataset1, batch_size=args.batch_size, shuffle=True, num_workers=8, drop_last=True
         )
         train_dataset2 = VISAANO(args.train_dataset_dir, class_name=CLASSES['seen'], train=True, 
-                                 normalize="w50",
+                                 normalize="imagebind",
                                  img_size=224, crp_size=224, msk_size=224, msk_crp_size=224)
         train_loader2 = DataLoader(
             train_dataset2, batch_size=args.batch_size, shuffle=True, num_workers=8, drop_last=True
