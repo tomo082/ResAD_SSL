@@ -88,14 +88,15 @@ ResAD behavior.
 
 ### AdaCLIP Prompted Patch Features
 
-`--feature_backbone adaclip_prompted` uses prompted image patch features from
-`tomo082/AdaCLIP_res`. The AdaCLIP checkpoint is not stored in this repository;
-pass either a local checkpoint or a GitHub Releases URL so it can be cached under
-`~/.cache/adaclip_res`.
+Use `main_ada.py` and `extract_ref_features_ada.py` for AdaCLIP prompted
+feature experiments. The default `main.py`, `validate.py`, and
+`extract_ref_features.py` remain unchanged for normal ResAD runs. AdaCLIP
+checkpoints are not stored in this repository; pass either a local checkpoint or
+a GitHub Releases URL so it can be cached under `~/.cache/adaclip_res`.
 
 Example reference feature extraction:
 ```bash
-CUDA_VISIBLE_DEVICES=0 python extract_ref_features.py \
+CUDA_VISIBLE_DEVICES=0 python extract_ref_features_ada.py \
   --dataset mvtec \
   --class_name screw \
   --dataset_dir /path/to/mvtec \
@@ -112,7 +113,7 @@ CUDA_VISIBLE_DEVICES=0 python extract_ref_features.py \
 
 Example training/evaluation:
 ```bash
-CUDA_VISIBLE_DEVICES=0 python main.py \
+CUDA_VISIBLE_DEVICES=0 python main_ada.py \
   --setting mvtec_to_mvtec \
   --train_dataset_dir /path/to/mvtec \
   --test_dataset_dir /path/to/mvtec \
