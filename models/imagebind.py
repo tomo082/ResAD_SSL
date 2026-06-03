@@ -11,7 +11,7 @@ class ImageBindModel(nn.Module):
     def __init__(self, device='cuda:0'):
         super(ImageBindModel, self).__init__()
 #DLboxで使うため
-        imagebind_ckpt_path = 'data/home/ueno/pretrained_weights/imagebind/imagebind_huge.pth'
+        imagebind_ckpt_path = '/data/home/ueno/pretrained_weights/imagebind/imagebind_huge.pth'
         
         print (f'Initializing visual encoder from {imagebind_ckpt_path} ...')
         self.visual_encoder, self.visual_hidden_size = imagebind_model.imagebind_huge({})
