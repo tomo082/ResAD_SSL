@@ -261,7 +261,7 @@ class AdaCLIPPromptedFeatureExtractor(nn.Module):
             feature = features[key]
             if feature.dim() != 4:
                 raise ValueError(f"{key} must have shape [B,C,H,W], got {tuple(feature.shape)}")
-            ordered.append(feature)
+            ordered.append(feature.float())
         return ordered
 
     def _debug_shapes(self, features):
