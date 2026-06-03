@@ -86,6 +86,56 @@ Face Hub `open_clip_model.safetensors` path. You can also pass
 can be evaluated without the ResAD++ VQ branch. Omit it to keep the original
 ResAD behavior.
 
+### AdaCLIP Prompted Patch Features
+
+Use `main_ada.py` and `extract_ref_features_ada.py` for AdaCLIP prompted
+feature experiments. The default `main.py`, `validate.py`, and
+`extract_ref_features.py` remain unchanged for normal ResAD runs. AdaCLIP
+checkpoints are not stored in this repository; pass either a local checkpoint or
+a GitHub Releases URL so it can be cached under `~/.cache/adaclip_res`.
+
+Example reference feature extraction:
+```bash
+CUDA_VISIBLE_DEVICES=0 python extract_ref_features_ada.py \
+  --dataset mvtec \
+  --class_name screw \
+  --dataset_dir /path/to/mvtec \
+  --output_dir ./ref_features/adaclip_prompted_336/mvtec_screw_4shot \
+  --feature_backbone adaclip_prompted \
+  --adaclip_repo_url https://github.com/tomo082/AdaCLIP_res \
+  --adaclip_checkpoint_url https://github.com/tomo082/AdaCLIP_res/releases/download/<tag>/<weight>.pth \
+  --adaclip_cache_dir ~/.cache/adaclip_res \
+  --adaclip_model ViT-L-14-336 \
+  --clip_layers 6 12 24 \
+  --clip_image_size 336 \
+  --device cuda:0
+```
+
+Example training/evaluation:
+```bash
+CUDA_VISIBLE_DEVICES=0 python main_ada.py \
+  --setting mvtec_to_mvtec \
+  --train_dataset_dir /path/to/mvtec \
+  --test_dataset_dir /path/to/mvtec \
+  --test_ref_feature_dir ./ref_features/adaclip_prompted_336/mvtec_screw_4shot \
+  --feature_backbone adaclip_prompted \
+  --adaclip_repo_url https://github.com/tomo082/AdaCLIP_res \
+  --adaclip_checkpoint_url https://github.com/tomo082/AdaCLIP_res/releases/download/<tag>/<weight>.pth \
+  --adaclip_cache_dir ~/.cache/adaclip_res \
+  --adaclip_model ViT-L-14-336 \
+  --clip_layers 6 12 24 \
+  --clip_image_size 336 \
+  --feature_levels 3 \
+  --disable_vqops \
+  --num_ref_shot 4 \
+  --device cuda:0
+```
+
+The AdaCLIP fork must expose `extract_prompted_features(images, layers,
+return_projected=False)` on its AdaCLIP model. The returned prompted patch maps
+are saved as `layer1.npy`, `layer2.npy`, and `layer3.npy`, matching the existing
+reference-feature layout.
+
 
 ## Training and Evaluating
 In this repository, we use ``wide_resnet50`` as the feature extractor by default.
