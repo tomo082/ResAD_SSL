@@ -9,6 +9,9 @@ import torch
 import torch.nn as nn
 
 
+_OPENAI_CLIP_BPE_URL = "https://openaipublic.azureedge.net/clip/bpe_simple_vocab_16e6.txt.gz"
+
+
 class _FeatureInfo:
     def __init__(self, channels):
         self._channels = list(channels)
@@ -146,6 +149,7 @@ class AdaCLIPPromptedFeatureExtractor(nn.Module):
         return checkpoint_path
 
     def _build_adaclip_trainer(self, repo_path, checkpoint_path):
+        self._ensure_tokenizer_assets(repo_path)
         if repo_path not in sys.path:
             sys.path.insert(0, repo_path)
         try:
@@ -183,6 +187,42 @@ class AdaCLIPPromptedFeatureExtractor(nn.Module):
         except Exception as exc:
             raise RuntimeError(f"Failed to load AdaCLIP checkpoint: {checkpoint_path}") from exc
         return trainer
+
+    def _ensure_tokenizer_assets(self, repo_path):
+        bpe_path = os.path.join(repo_path, "method", "bpe_simple_vocab_16e6.txt.gz")
+        if self._is_valid_gzip(bpe_path):
+            return
+
+        os.makedirs(os.path.dirname(bpe_path), exist_ok=True)
+        tmp_path = bpe_path + ".download"
+        print(
+            "AdaCLIP tokenizer BPE is missing or invalid; "
+            f"downloading OpenAI CLIP BPE to {bpe_path}"
+        )
+        try:
+            torch.hub.download_url_to_file(_OPENAI_CLIP_BPE_URL, tmp_path, progress=True)
+            if not self._is_valid_gzip(tmp_path):
+                raise RuntimeError("downloaded BPE file is not a valid gzip archive")
+            os.replace(tmp_path, bpe_path)
+        except Exception as exc:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise RuntimeError(
+                "Failed to prepare AdaCLIP tokenizer BPE. The cached AdaCLIP_res repo may "
+                "contain a Git LFS pointer instead of the real gzip file. Install git-lfs "
+                f"and run `git lfs pull` in {repo_path}, or manually download "
+                f"{_OPENAI_CLIP_BPE_URL} to {bpe_path}."
+            ) from exc
+
+    @staticmethod
+    def _is_valid_gzip(path):
+        if not os.path.isfile(path):
+            return False
+        try:
+            with open(path, "rb") as handle:
+                return handle.read(2) == b"\x1f\x8b"
+        except OSError:
+            return False
 
     def _load_model_config(self, repo_path):
         config_path = os.path.join(repo_path, "model_configs", f"{self.model_name}.json")
