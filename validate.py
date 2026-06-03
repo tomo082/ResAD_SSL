@@ -37,7 +37,7 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
         size = image.shape[-1]
         
         with torch.no_grad():
-            if getattr(args, "feature_backbone", "original") == "clip_raw":
+            if getattr(args, "feature_backbone", "original") in ("clip_raw", "adaclip_prompted"):
                 features = encoder(image)
                 mfeatures = get_matched_ref_features(features, ref_features)
                 rfeatures = get_residual_features(features, mfeatures, pos_flag=True)

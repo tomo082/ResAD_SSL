@@ -22,6 +22,7 @@ from models.imagebind import ImageBindModel
 from models.dinov2_backbone import DINOv2BackboneWrapper, DINOV2_BACKBONES, DINOV2_FEATURE_MODES
 from models.dinov2_backbone import print_dinov2_config
 from models.clip_feature_extractor import CLIPRawFeatureExtractor
+from models.adaclip_feature_extractor import AdaCLIPPromptedFeatureExtractor
 from residual_wavelet import apply_feature_wavelet_filter
 from utils import load_weights
 
@@ -188,15 +189,16 @@ def print_wavelet_config(args):
 
 
 def get_feature_image_size(args):
-    if args.feature_backbone == "clip_raw":
+    if args.feature_backbone in ("clip_raw", "adaclip_prompted"):
         return args.clip_image_size
     return 224
 
 
 def build_feature_encoder(args, device):
+    if args.feature_backbone in ("clip_raw", "adaclip_prompted") and len(args.clip_layers) != 3:
+        raise ValueError(f"{args.feature_backbone} currently expects exactly 3 clip_layers for ResAD reference features.")
+
     if args.feature_backbone == "clip_raw":
-        if len(args.clip_layers) != 3:
-            raise ValueError("clip_raw currently expects exactly 3 clip_layers for ResAD reference features.")
         encoder = CLIPRawFeatureExtractor(
             model_name=args.clip_model,
             pretrained=args.clip_pretrained,
@@ -205,6 +207,23 @@ def build_feature_encoder(args, device):
             freeze=True,
             weight_source=args.clip_weight_source,
             checkpoint=args.clip_checkpoint,
+        ).to(device)
+        encoder.eval()
+        return encoder
+
+    if args.feature_backbone == "adaclip_prompted":
+        encoder = AdaCLIPPromptedFeatureExtractor(
+            adaclip_repo_url=args.adaclip_repo_url,
+            adaclip_repo_path=args.adaclip_repo_path,
+            checkpoint=args.adaclip_checkpoint,
+            checkpoint_url=args.adaclip_checkpoint_url,
+            cache_dir=args.adaclip_cache_dir,
+            model_name=args.adaclip_model,
+            layers=args.clip_layers,
+            image_size=args.clip_image_size,
+            return_projected=args.adaclip_return_projected,
+            freeze=True,
+            device=device,
         ).to(device)
         encoder.eval()
         return encoder
@@ -365,7 +384,18 @@ def main2(args):
         np.save(os.path.join(args.save_dir, class_name, 'layer3.npy'), layer3_features.cpu().numpy())
         np.save(os.path.join(args.save_dir, class_name, 'layer4.npy'), layer4_features.cpu().numpy())
         
-        
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    value = v.lower()
+    if value in ("yes", "true", "t", "1"):
+        return True
+    if value in ("no", "false", "f", "0"):
+        return False
+    raise argparse.ArgumentTypeError("Boolean value expected.")
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default="mvtec")
@@ -377,13 +407,20 @@ if __name__ == '__main__':
     parser.add_argument('--save_dir', type=str, default="./ref_features/w50/mvtec_4shot")
     parser.add_argument('--output_dir', type=str, default="")
     parser.add_argument('--backbone', type=str, default="wide_resnet50_2")#10/26追加
-    parser.add_argument('--feature_backbone', type=str, default="original", choices=["original", "clip_raw"])
+    parser.add_argument('--feature_backbone', type=str, default="original", choices=["original", "clip_raw", "adaclip_prompted"])
     parser.add_argument('--clip_model', type=str, default="ViT-L-14-336")
     parser.add_argument('--clip_pretrained', type=str, default="openai")
     parser.add_argument('--clip_weight_source', type=str, default="open_clip", choices=["open_clip", "openai_local"])
     parser.add_argument('--clip_checkpoint', type=str, default="")
     parser.add_argument('--clip_layers', type=int, nargs="+", default=[6, 12, 24])
     parser.add_argument('--clip_image_size', type=int, default=518)
+    parser.add_argument('--adaclip_repo_url', type=str, default="https://github.com/tomo082/AdaCLIP_res")
+    parser.add_argument('--adaclip_repo_path', type=str, default="")
+    parser.add_argument('--adaclip_checkpoint', type=str, default="")
+    parser.add_argument('--adaclip_checkpoint_url', type=str, default="")
+    parser.add_argument('--adaclip_cache_dir', type=str, default="~/.cache/adaclip_res")
+    parser.add_argument('--adaclip_model', type=str, default="ViT-L-14-336")
+    parser.add_argument('--adaclip_return_projected', type=str2bool, nargs="?", const=True, default=False)
     parser.add_argument("--dinov2_feature_mode", type=str, default="final_projected", choices=DINOV2_FEATURE_MODES)
     parser.add_argument("--dinov2_layers", type=int, nargs="+", default=[4, 8, 12])
     parser.add_argument("--dinov2_proj_dim", type=int, default=256)

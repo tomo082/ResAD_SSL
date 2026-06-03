@@ -23,6 +23,7 @@ from models.fc_flow import load_flow_model
 from models.modules import MultiScaleConv
 from models.vq import MultiScaleVQ
 from models.clip_feature_extractor import CLIPRawFeatureExtractor
+from models.adaclip_feature_extractor import AdaCLIPPromptedFeatureExtractor
 from utils import init_seeds, get_residual_features, get_mc_matched_ref_features, get_mc_reference_features
 from utils import BoundaryAverager
 from losses.loss import calculate_log_barrier_bi_occ_loss
@@ -42,15 +43,16 @@ SETTINGS = {'visa_to_mvtec': VISA_TO_MVTEC, 'mvtec_to_visa': MVTEC_TO_VISA,
 
 
 def get_feature_image_size(args):
-    if args.feature_backbone == "clip_raw":
+    if args.feature_backbone in ("clip_raw", "adaclip_prompted"):
         return args.clip_image_size
     return 224
 
 
 def build_feature_encoder(args):
+    if args.feature_backbone in ("clip_raw", "adaclip_prompted") and len(args.clip_layers) != 3:
+        raise ValueError(f"{args.feature_backbone} currently expects exactly 3 clip_layers for ResAD multi-level features.")
+
     if args.feature_backbone == "clip_raw":
-        if len(args.clip_layers) != 3:
-            raise ValueError("clip_raw currently expects exactly 3 clip_layers for ResAD multi-level features.")
         encoder = CLIPRawFeatureExtractor(
             model_name=args.clip_model,
             pretrained=args.clip_pretrained,
@@ -59,6 +61,23 @@ def build_feature_encoder(args):
             freeze=True,
             weight_source=args.clip_weight_source,
             checkpoint=args.clip_checkpoint,
+        ).to(args.device)
+        encoder.eval()
+        return encoder, encoder.feature_info.channels()
+
+    if args.feature_backbone == "adaclip_prompted":
+        encoder = AdaCLIPPromptedFeatureExtractor(
+            adaclip_repo_url=args.adaclip_repo_url,
+            adaclip_repo_path=args.adaclip_repo_path,
+            checkpoint=args.adaclip_checkpoint,
+            checkpoint_url=args.adaclip_checkpoint_url,
+            cache_dir=args.adaclip_cache_dir,
+            model_name=args.adaclip_model,
+            layers=args.clip_layers,
+            image_size=args.clip_image_size,
+            return_projected=args.adaclip_return_projected,
+            freeze=True,
+            device=args.device,
         ).to(args.device)
         encoder.eval()
         return encoder, encoder.feature_info.channels()
@@ -129,7 +148,7 @@ def main(args):
     if len(feat_dims) != args.feature_levels:
         raise ValueError(
             f"feature_levels={args.feature_levels} does not match encoder outputs {len(feat_dims)}. "
-            "For clip_raw, keep --feature_levels 3 with the default three --clip_layers."
+            "For CLIP-based backbones, keep --feature_levels 3 with the default three --clip_layers."
         )
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
     use_vqops = not args.disable_vqops
@@ -338,6 +357,16 @@ def load_mc_reference_features(root_dir: str, class_names, device: torch.device,
     
     return refs
                     
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    value = v.lower()
+    if value in ("yes", "true", "t", "1"):
+        return True
+    if value in ("no", "false", "f", "0"):
+        return False
+    raise argparse.ArgumentTypeError("Boolean value expected.")
                     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -354,13 +383,20 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_path', type=str, default="./checkpoints/")
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--backbone', type=str, default="wide_resnet50_2")
-    parser.add_argument('--feature_backbone', type=str, default="original", choices=["original", "clip_raw"])
+    parser.add_argument('--feature_backbone', type=str, default="original", choices=["original", "clip_raw", "adaclip_prompted"])
     parser.add_argument('--clip_model', type=str, default="ViT-L-14-336")
     parser.add_argument('--clip_pretrained', type=str, default="openai")
     parser.add_argument('--clip_weight_source', type=str, default="open_clip", choices=["open_clip", "openai_local"])
     parser.add_argument('--clip_checkpoint', type=str, default="")
     parser.add_argument('--clip_layers', type=int, nargs="+", default=[6, 12, 24])
     parser.add_argument('--clip_image_size', type=int, default=518)
+    parser.add_argument('--adaclip_repo_url', type=str, default="https://github.com/tomo082/AdaCLIP_res")
+    parser.add_argument('--adaclip_repo_path', type=str, default="")
+    parser.add_argument('--adaclip_checkpoint', type=str, default="")
+    parser.add_argument('--adaclip_checkpoint_url', type=str, default="")
+    parser.add_argument('--adaclip_cache_dir', type=str, default="~/.cache/adaclip_res")
+    parser.add_argument('--adaclip_model', type=str, default="ViT-L-14-336")
+    parser.add_argument('--adaclip_return_projected', type=str2bool, nargs="?", const=True, default=False)
     parser.add_argument('--rank', type=int, default="0")    
     
     # flow parameters
