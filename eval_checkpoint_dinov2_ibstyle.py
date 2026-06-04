@@ -225,7 +225,7 @@ def validate_dinov2_ibstyle(args, encoder, vq_ops, constraintor, estimators, tes
         with torch.no_grad():
             features = dinov2_tokens_to_maps(encoder.encode_image_from_tensors(image))
             mfeatures = get_matched_ref_features(features, ref_features)
-            rfeatures = get_residual_features(features, mfeatures)
+            rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             if not args.residual:
                 rfeatures = features
 
