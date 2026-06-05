@@ -38,7 +38,7 @@ class AdaCLIPPromptedFeatureExtractor(nn.Module):
         checkpoint_url="",
         cache_dir="~/.cache/adaclip_res",
         model_name="ViT-L-14-336",
-        layers=(6, 12, 24),
+        layers=(6, 12, 18, 24),
         image_size=336,
         return_projected=False,
         freeze=True,
@@ -58,8 +58,8 @@ class AdaCLIPPromptedFeatureExtractor(nn.Module):
         self.device_name = device
         self._debug_printed = False
 
-        if len(self.layers) != 3:
-            raise ValueError("adaclip_prompted currently expects exactly 3 clip_layers for ResAD multi-level features.")
+        if len(self.layers) == 0:
+            raise ValueError("adaclip_prompted requires at least one clip layer.")
         if not self.checkpoint and not self.checkpoint_url:
             raise ValueError(
                 "--feature_backbone adaclip_prompted requires --adaclip_checkpoint "
