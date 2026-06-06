@@ -27,7 +27,7 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
 
     collect_visual_outputs = _should_collect_visual_outputs(args)
     label_list, gt_mask_list = [], []
-    input_image_list = []
+    image_list = []
     logps1_list = [list() for _ in range(args.feature_levels)]
     logps2_list = [list() for _ in range(args.feature_levels)]
     progress_bar = tqdm(total=len(test_loader))
@@ -37,7 +37,7 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
 
         image, label, mask = batch[0], batch[1], batch[2]
         if collect_visual_outputs:
-            input_image_list.append(image.detach().cpu())
+            image_list.append(image.cpu().numpy())
         gt_mask_list.append(mask.squeeze(1).cpu().numpy().astype(bool))
         label_list.append(label.cpu().numpy().astype(bool).ravel())
 
@@ -125,7 +125,7 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
             'BScores': np.asarray(scores2),
             'Merged': np.asarray(scores),
         }
-        metrics['input_images'] = torch.cat(input_image_list, dim=0).numpy()
+        metrics['input_images'] = np.concatenate(image_list, axis=0)
         metrics['gt_masks'] = gt_masks
 
     return metrics
