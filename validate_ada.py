@@ -14,6 +14,10 @@ from losses.utils import get_logp_a
 warnings.filterwarnings('ignore')
 
 
+def _should_collect_visual_outputs(args):
+    return bool(getattr(args, "save_heatmap_dir", ""))
+
+
 def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_features, device, class_name):
     if vq_ops is not None:
         vq_ops.eval()
@@ -21,7 +25,9 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
     for estimator in estimators:
         estimator.eval()
 
+    collect_visual_outputs = _should_collect_visual_outputs(args)
     label_list, gt_mask_list = [], []
+    input_image_list = []
     logps1_list = [list() for _ in range(args.feature_levels)]
     logps2_list = [list() for _ in range(args.feature_levels)]
     progress_bar = tqdm(total=len(test_loader))
@@ -30,6 +36,8 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
         progress_bar.update(1)
 
         image, label, mask = batch[0], batch[1], batch[2]
+        if collect_visual_outputs:
+            input_image_list.append(image.detach().cpu())
         gt_mask_list.append(mask.squeeze(1).cpu().numpy().astype(bool))
         label_list.append(label.cpu().numpy().astype(bool).ravel())
 
@@ -111,6 +119,14 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
     metrics['scores1'] = [img_auc1, img_ap1, img_f1_score1, pix_auc1, pix_ap1, pix_f1_score1, pix_aupro1]
     metrics['scores2'] = [img_auc2, img_ap2, img_f1_score2, pix_auc2, pix_ap2, pix_f1_score2, pix_aupro2]
     metrics['scores'] = [img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro]
+    if collect_visual_outputs:
+        metrics['score_maps'] = {
+            'Logps': np.asarray(scores1),
+            'BScores': np.asarray(scores2),
+            'Merged': np.asarray(scores),
+        }
+        metrics['input_images'] = torch.cat(input_image_list, dim=0).numpy()
+        metrics['gt_masks'] = gt_masks
 
     return metrics
 
