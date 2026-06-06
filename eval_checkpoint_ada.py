@@ -191,18 +191,6 @@ def denormalization(x):
     return x
 
 
-def save_heatmap_png(path, score_map, image=None):
-    fig, ax = plt.subplots(figsize=(4.8, 4.2), dpi=150)
-    im = ax.imshow(score_map, cmap="jet", interpolation="nearest", vmin=0.0, vmax=2.0)
-    if image is not None:
-        ax.imshow(image, alpha=0.3, interpolation="none")
-    ax.axis("off")
-    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.set_ticks([0.0, 0.5, 1.0, 1.5, 2.0])
-    fig.savefig(path, bbox_inches="tight", pad_inches=0.04)
-    plt.close(fig)
-
-
 def save_score_comparison(path, class_name, index, image, gt_mask, score_maps):
     num_cols = 2 + len(HEATMAP_SCORE_TYPES)
     fig, axs = plt.subplots(1, num_cols, figsize=(4 * num_cols, 5))
@@ -234,11 +222,8 @@ def save_visual_outputs(output_root, class_name, metrics):
         print("[Heatmap] validate() did not return score_maps; skipped visual output.")
         return
 
-    class_dir = os.path.join(output_root, class_name)
-    comparison_dir = os.path.join(class_dir, "score_visuals")
-    individual_dir = os.path.join(class_dir, "individual")
+    comparison_dir = os.path.join(output_root, class_name, "score_visuals")
     os.makedirs(comparison_dir, exist_ok=True)
-    os.makedirs(individual_dir, exist_ok=True)
 
     loaded_images = np.asarray(metrics["input_images"])
     loaded_masks = _ensure_batch_array(metrics["gt_masks"]).astype(np.float32)
@@ -252,24 +237,14 @@ def save_visual_outputs(output_root, class_name, metrics):
         gt_mask = loaded_masks[index]
         sample_scores = {score_name: score_maps[score_name][index] for score_name, _ in HEATMAP_SCORE_TYPES}
 
-        prefix = f"sample_{index:03d}"
         save_score_comparison(
-            os.path.join(comparison_dir, f"{prefix}_scores.png"),
+            os.path.join(comparison_dir, f"sample_{index:03d}_scores.png"),
             class_name,
             index,
             image,
             gt_mask,
             sample_scores,
         )
-
-        plt.imsave(os.path.join(individual_dir, f"{prefix}_input.png"), image)
-        plt.imsave(os.path.join(individual_dir, f"{prefix}_gt_mask.png"), gt_mask, cmap="gray", vmin=0.0, vmax=1.0)
-        for score_name, slug in HEATMAP_SCORE_TYPES:
-            save_heatmap_png(
-                os.path.join(individual_dir, f"{prefix}_{slug}_heatmap.png"),
-                sample_scores[score_name],
-                image=image,
-            )
 
         if (index + 1) % 10 == 0:
             print(f"Processed {index + 1}/{total_samples} images...")
@@ -305,7 +280,7 @@ def main(args):
     print("[Eval-Ada-IBStyle] residual_mode: sq")
     if args.save_heatmap_dir:
         print("[Heatmap] save_heatmap_dir:", args.save_heatmap_dir)
-        print("[Heatmap] score_types: Logps, BScores, Merged")
+        print("[Heatmap] output: Input / GT / Logps / BScores / Merged comparison figures")
         print("[Heatmap] colorbar range: 0.0 - 2.0")
 
     encoder, feat_dims = build_feature_encoder(args)
