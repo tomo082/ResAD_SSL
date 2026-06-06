@@ -154,14 +154,24 @@ def save_csv(path, rows):
 
 
 def resolve_eval_class_names(args, classes):
-    if not args.class_name:
+    requested = []
+    if args.class_names:
+        requested.extend(args.class_names)
+    if args.class_name:
+        requested.append(args.class_name)
+    if not requested:
         return list(classes["unseen"])
-    if args.class_name not in classes["unseen"]:
-        print(
-            f"[Eval-Ada-IBStyle] class_name '{args.class_name}' is not in "
-            f"the unseen list for setting '{args.setting}'; evaluating it anyway."
-        )
-    return [args.class_name]
+
+    deduped = []
+    for class_name in requested:
+        if class_name not in deduped:
+            deduped.append(class_name)
+        if class_name not in classes["unseen"]:
+            print(
+                f"[Eval-Ada-IBStyle] class_name '{class_name}' is not in "
+                f"the unseen list for setting '{args.setting}'; evaluating it anyway."
+            )
+    return deduped
 
 
 def _ensure_batch_array(array):
@@ -171,22 +181,51 @@ def _ensure_batch_array(array):
     return array
 
 
-def denormalize_w50_images(images):
-    images = np.asarray(images, dtype=np.float32)
-    if images.ndim != 4:
-        raise ValueError(f"input_images must have shape [N,3,H,W], got {images.shape}")
-    images = images.transpose(0, 2, 3, 1)
-    images = images * IMAGENET_STD.reshape(1, 1, 1, 3) + IMAGENET_MEAN.reshape(1, 1, 1, 3)
-    return np.clip(images, 0.0, 1.0)
+def denormalization(x):
+    x = np.asarray(x, dtype=np.float32)
+    if x.ndim != 3:
+        raise ValueError(f"image must have shape [C,H,W], got {x.shape}")
+    x = x.transpose(1, 2, 0)
+    x = (x * IMAGENET_STD) + IMAGENET_MEAN
+    x = (x * 255.0).clip(0, 255).astype(np.uint8)
+    return x
 
 
-def save_heatmap_png(path, score_map):
+def save_heatmap_png(path, score_map, image=None):
     fig, ax = plt.subplots(figsize=(4.8, 4.2), dpi=150)
-    im = ax.imshow(score_map, cmap="jet", vmin=0.0, vmax=2.0)
+    im = ax.imshow(score_map, cmap="jet", interpolation="nearest", vmin=0.0, vmax=2.0)
+    if image is not None:
+        ax.imshow(image, alpha=0.3, interpolation="none")
     ax.axis("off")
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     cbar.set_ticks([0.0, 0.5, 1.0, 1.5, 2.0])
     fig.savefig(path, bbox_inches="tight", pad_inches=0.04)
+    plt.close(fig)
+
+
+def save_score_comparison(path, class_name, index, image, gt_mask, score_maps):
+    num_cols = 2 + len(HEATMAP_SCORE_TYPES)
+    fig, axs = plt.subplots(1, num_cols, figsize=(4 * num_cols, 5))
+    fig.suptitle(f"{class_name} - Sample {index:03d}", fontsize=16)
+
+    axs[0].imshow(image)
+    axs[0].set_title("Input Image")
+    axs[0].axis("off")
+
+    axs[1].imshow(gt_mask, cmap="gray")
+    axs[1].set_title("Ground Truth")
+    axs[1].axis("off")
+
+    for offset, (score_name, _) in enumerate(HEATMAP_SCORE_TYPES):
+        ax = axs[2 + offset]
+        im = ax.imshow(score_maps[score_name], cmap="jet", interpolation="nearest", vmin=0.0, vmax=2.0)
+        ax.imshow(image, alpha=0.3, interpolation="none")
+        ax.set_title(score_name)
+        ax.axis("off")
+        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -196,23 +235,46 @@ def save_visual_outputs(output_root, class_name, metrics):
         return
 
     class_dir = os.path.join(output_root, class_name)
-    os.makedirs(class_dir, exist_ok=True)
+    comparison_dir = os.path.join(class_dir, "score_visuals")
+    individual_dir = os.path.join(class_dir, "individual")
+    os.makedirs(comparison_dir, exist_ok=True)
+    os.makedirs(individual_dir, exist_ok=True)
 
-    images = denormalize_w50_images(metrics["input_images"])
-    gt_masks = _ensure_batch_array(metrics["gt_masks"]).astype(np.float32)
+    loaded_images = np.asarray(metrics["input_images"])
+    loaded_masks = _ensure_batch_array(metrics["gt_masks"]).astype(np.float32)
     score_maps = {name: _ensure_batch_array(values) for name, values in metrics["score_maps"].items()}
-    n_images = min([images.shape[0], gt_masks.shape[0]] + [values.shape[0] for values in score_maps.values()])
+    total_samples = min([len(loaded_images), len(loaded_masks)] + [values.shape[0] for values in score_maps.values()])
 
-    for index in range(n_images):
-        prefix = f"{index:04d}"
-        plt.imsave(os.path.join(class_dir, f"{prefix}_input.png"), images[index])
-        plt.imsave(os.path.join(class_dir, f"{prefix}_gt_mask.png"), gt_masks[index], cmap="gray", vmin=0.0, vmax=1.0)
+    print(f"\n--- Saving score heatmaps ({class_name}) ---")
+    plt.ioff()
+    for index in range(total_samples):
+        image = denormalization(loaded_images[index])
+        gt_mask = loaded_masks[index]
+        sample_scores = {score_name: score_maps[score_name][index] for score_name, _ in HEATMAP_SCORE_TYPES}
+
+        prefix = f"sample_{index:03d}"
+        save_score_comparison(
+            os.path.join(comparison_dir, f"{prefix}_scores.png"),
+            class_name,
+            index,
+            image,
+            gt_mask,
+            sample_scores,
+        )
+
+        plt.imsave(os.path.join(individual_dir, f"{prefix}_input.png"), image)
+        plt.imsave(os.path.join(individual_dir, f"{prefix}_gt_mask.png"), gt_mask, cmap="gray", vmin=0.0, vmax=1.0)
         for score_name, slug in HEATMAP_SCORE_TYPES:
             save_heatmap_png(
-                os.path.join(class_dir, f"{prefix}_{slug}_heatmap.png"),
-                score_maps[score_name][index],
+                os.path.join(individual_dir, f"{prefix}_{slug}_heatmap.png"),
+                sample_scores[score_name],
+                image=image,
             )
-    print(f"[Heatmap] saved {n_images} samples with Logps/BScores/Merged heatmaps to {class_dir}")
+
+        if (index + 1) % 10 == 0:
+            print(f"Processed {index + 1}/{total_samples} images...")
+
+    print(f"[Heatmap] saved {total_samples} comparison figures to {comparison_dir}")
 
 
 def main(args):
@@ -314,6 +376,7 @@ def build_parser():
     parser.add_argument("--setting", type=str, required=True)
     parser.add_argument("--classes", type=str, default="none")
     parser.add_argument("--class_name", type=str, default="")
+    parser.add_argument("--class_names", type=str, nargs="+", default=None)
     parser.add_argument("--test_dataset_dir", type=str, required=True)
     parser.add_argument("--test_ref_feature_dir", type=str, required=True)
     parser.add_argument("--checkpoint_file", type=str, default="")
