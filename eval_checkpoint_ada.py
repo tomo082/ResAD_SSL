@@ -5,6 +5,9 @@ import os
 import re
 import warnings
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -30,6 +33,11 @@ SCORE_TYPES = (
     ("scores2", "BScores"),
     ("scores", "Merged"),
 )
+HEATMAP_SCORE_TYPES = (
+    ("Logps", "logps"),
+    ("BScores", "bscores"),
+    ("Merged", "merged"),
+)
 CSV_COLUMNS = (
     "class_name",
     "score_type",
@@ -41,6 +49,8 @@ CSV_COLUMNS = (
     "pixel_f1",
     "aupro",
 )
+IMAGENET_MEAN = np.asarray([0.485, 0.456, 0.406], dtype=np.float32)
+IMAGENET_STD = np.asarray([0.229, 0.224, 0.225], dtype=np.float32)
 
 
 def resolve_checkpoint_file(args):
@@ -143,6 +153,68 @@ def save_csv(path, rows):
     print(f"[CSV] saved: {path}")
 
 
+def resolve_eval_class_names(args, classes):
+    if not args.class_name:
+        return list(classes["unseen"])
+    if args.class_name not in classes["unseen"]:
+        print(
+            f"[Eval-Ada-IBStyle] class_name '{args.class_name}' is not in "
+            f"the unseen list for setting '{args.setting}'; evaluating it anyway."
+        )
+    return [args.class_name]
+
+
+def _ensure_batch_array(array):
+    array = np.asarray(array)
+    if array.ndim == 2:
+        return array[None, ...]
+    return array
+
+
+def denormalize_w50_images(images):
+    images = np.asarray(images, dtype=np.float32)
+    if images.ndim != 4:
+        raise ValueError(f"input_images must have shape [N,3,H,W], got {images.shape}")
+    images = images.transpose(0, 2, 3, 1)
+    images = images * IMAGENET_STD.reshape(1, 1, 1, 3) + IMAGENET_MEAN.reshape(1, 1, 1, 3)
+    return np.clip(images, 0.0, 1.0)
+
+
+def save_heatmap_png(path, score_map):
+    fig, ax = plt.subplots(figsize=(4.8, 4.2), dpi=150)
+    im = ax.imshow(score_map, cmap="jet", vmin=0.0, vmax=2.0)
+    ax.axis("off")
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_ticks([0.0, 0.5, 1.0, 1.5, 2.0])
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.04)
+    plt.close(fig)
+
+
+def save_visual_outputs(output_root, class_name, metrics):
+    if "score_maps" not in metrics:
+        print("[Heatmap] validate() did not return score_maps; skipped visual output.")
+        return
+
+    class_dir = os.path.join(output_root, class_name)
+    os.makedirs(class_dir, exist_ok=True)
+
+    images = denormalize_w50_images(metrics["input_images"])
+    gt_masks = _ensure_batch_array(metrics["gt_masks"]).astype(np.float32)
+    score_maps = {name: _ensure_batch_array(values) for name, values in metrics["score_maps"].items()}
+    n_images = min([images.shape[0], gt_masks.shape[0]] + [values.shape[0] for values in score_maps.values()])
+
+    for index in range(n_images):
+        prefix = f"{index:04d}"
+        plt.imsave(os.path.join(class_dir, f"{prefix}_input.png"), images[index])
+        plt.imsave(os.path.join(class_dir, f"{prefix}_gt_mask.png"), gt_masks[index], cmap="gray", vmin=0.0, vmax=1.0)
+        for score_name, slug in HEATMAP_SCORE_TYPES:
+            save_heatmap_png(
+                os.path.join(class_dir, f"{prefix}_{slug}_heatmap.png"),
+                score_maps[score_name][index],
+            )
+    print(f"[Heatmap] saved {n_images} samples with Logps/BScores/Merged heatmaps to {class_dir}")
+
+
 def main(args):
     if args.setting not in SETTINGS:
         raise ValueError(f"Dataset setting must be in {SETTINGS.keys()}, but got {args.setting}.")
@@ -153,6 +225,7 @@ def main(args):
         )
 
     classes = SETTINGS[args.setting]
+    eval_class_names = resolve_eval_class_names(args, classes)
     checkpoint_file = resolve_checkpoint_file(args)
     eval_epoch = resolve_eval_epoch(args, checkpoint_file)
     image_size = get_feature_image_size(args)
@@ -160,7 +233,7 @@ def main(args):
     print("[Eval-Ada-IBStyle] checkpoint_file:", checkpoint_file)
     print("[Eval-Ada-IBStyle] eval_epoch:", eval_epoch)
     print("[Eval-Ada-IBStyle] setting:", args.setting)
-    print("[Eval-Ada-IBStyle] classes:", classes["unseen"])
+    print("[Eval-Ada-IBStyle] classes:", eval_class_names)
     print("[Eval-Ada-IBStyle] feature_backbone:", args.feature_backbone)
     print("[Eval-Ada-IBStyle] clip_layers:", args.clip_layers)
     print("[Eval-Ada-IBStyle] clip_image_size:", args.clip_image_size)
@@ -168,6 +241,10 @@ def main(args):
     print("[Eval-Ada-IBStyle] num_ref_shot:", args.num_ref_shot)
     print("[Eval-Ada-IBStyle] test_ref_feature_dir:", args.test_ref_feature_dir)
     print("[Eval-Ada-IBStyle] residual_mode: sq")
+    if args.save_heatmap_dir:
+        print("[Heatmap] save_heatmap_dir:", args.save_heatmap_dir)
+        print("[Heatmap] score_types: Logps, BScores, Merged")
+        print("[Heatmap] colorbar range: 0.0 - 2.0")
 
     encoder, feat_dims = build_feature_encoder(args)
     print("[Eval-Ada-IBStyle] feat_dims:", feat_dims)
@@ -183,7 +260,7 @@ def main(args):
 
     test_ref_features = load_mc_reference_features(
         args.test_ref_feature_dir,
-        classes["unseen"],
+        eval_class_names,
         args.device,
         args.num_ref_shot,
         feature_levels=args.feature_levels,
@@ -191,7 +268,7 @@ def main(args):
 
     results_by_type = {label: [] for _, label in SCORE_TYPES}
     csv_rows = []
-    for class_name in classes["unseen"]:
+    for class_name in eval_class_names:
         test_dataset = build_test_dataset(args, class_name, image_size)
         test_loader = DataLoader(
             test_dataset,
@@ -211,6 +288,9 @@ def main(args):
             args.device,
             class_name,
         )
+
+        if args.save_heatmap_dir:
+            save_visual_outputs(args.save_heatmap_dir, class_name, metrics)
 
         print(f"\nClass: {class_name}")
         for key, label in SCORE_TYPES:
@@ -233,6 +313,7 @@ def build_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("--setting", type=str, required=True)
     parser.add_argument("--classes", type=str, default="none")
+    parser.add_argument("--class_name", type=str, default="")
     parser.add_argument("--test_dataset_dir", type=str, required=True)
     parser.add_argument("--test_ref_feature_dir", type=str, required=True)
     parser.add_argument("--checkpoint_file", type=str, default="")
@@ -244,6 +325,7 @@ def build_parser():
     parser.add_argument("--num_workers", type=int, default=8)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--save_csv", type=str, default="")
+    parser.add_argument("--save_heatmap_dir", type=str, default="")
     parser.add_argument("--eval_epoch", type=int, default=None)
 
     parser.add_argument("--clip_model", type=str, default="ViT-L-14-336")
