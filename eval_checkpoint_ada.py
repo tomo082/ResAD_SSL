@@ -206,7 +206,7 @@ def save_score_comparison(path, class_name, index, image, gt_mask, score_maps):
 
     for offset, (score_name, _) in enumerate(HEATMAP_SCORE_TYPES):
         ax = axs[2 + offset]
-        im = ax.imshow(score_maps[score_name], cmap="jet", interpolation="nearest", vmin=0.0, vmax=2.0)
+        im = ax.imshow(score_maps[score_name], cmap="jet", interpolation="nearest")
         ax.imshow(image, alpha=0.3, interpolation="none")
         ax.set_title(score_name)
         ax.axis("off")
@@ -281,7 +281,7 @@ def main(args):
     if args.save_heatmap_dir:
         print("[Heatmap] save_heatmap_dir:", args.save_heatmap_dir)
         print("[Heatmap] output: Input / GT / Logps / BScores / Merged comparison figures")
-        print("[Heatmap] colorbar range: 0.0 - 2.0")
+        print("[Heatmap] colorbar range: automatic")
 
     encoder, feat_dims = build_feature_encoder(args)
     print("[Eval-Ada-IBStyle] feat_dims:", feat_dims)
