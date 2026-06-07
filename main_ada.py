@@ -35,6 +35,17 @@ from models.clip_feature_extractor import CLIPRawFeatureExtractor
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleOrthogonalProjector
 from models.vq import MultiScaleVQ4
+from residual_norm import (
+    RESIDUAL_NORM_MODES,
+    apply_residual_norm_from_args,
+    create_residual_norm_accumulator,
+    finalize_residual_norm_stats,
+    pack_residual_norm_state,
+    print_residual_norm_stats,
+    residual_norm_enabled,
+    update_residual_norm_accumulator,
+    validate_residual_norm_args,
+)
 from train import train2
 from utils import BoundaryAverager, get_mc_matched_ref_features, get_mc_reference_features, get_residual_features, init_seeds
 from validate_ada import validate
@@ -198,8 +209,50 @@ def load_mc_reference_features(root_dir, class_names, device, num_shot=4, featur
     return refs
 
 
+def compute_residual_norm_stats(args, encoder, train_loader, image_size):
+    if not residual_norm_enabled(args):
+        args.residual_norm_stats = None
+        return None
+
+    print(
+        f"[ResidualNorm] collecting stats from up to {args.residual_stats_batches} "
+        "training normal batch(es)."
+    )
+    accumulator = create_residual_norm_accumulator(args.residual_norm)
+    encoder.eval()
+    collected_batches = 0
+    with torch.no_grad():
+        for batch in train_loader:
+            if collected_batches >= args.residual_stats_batches:
+                break
+            images, _, _, class_names = batch
+            images = images.to(args.device)
+            features = encoder(images)
+            features = normalize_adaclip_feature_maps_if_enabled(args, features)
+            ref_features = get_mc_reference_features(
+                encoder,
+                args.train_dataset_dir,
+                class_names,
+                images.device,
+                args.train_ref_shot,
+                img_size=image_size,
+            )
+            ref_features = normalize_adaclip_reference_features_if_enabled(args, ref_features)
+            mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
+            rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
+            update_residual_norm_accumulator(accumulator, rfeatures)
+            collected_batches += 1
+
+    stats = finalize_residual_norm_stats(accumulator)
+    args.residual_norm_stats = stats
+    print(f"[ResidualNorm] collected batches: {collected_batches}")
+    print_residual_norm_stats(stats)
+    return stats
+
+
 def main(args):
     first_stage_epoch = args.first_epoch
+    validate_residual_norm_args(args)
     if args.setting in SETTINGS:
         classes = SETTINGS[args.setting]
     else:
@@ -219,6 +272,11 @@ def main(args):
     print("[Ada-IBStyle] feat_dims:", feat_dims)
     print("[Ada-IBStyle] first_epoch:", first_stage_epoch)
     print("[Ada-IBStyle] adaclip_feature_l2norm:", _should_l2_normalize_adaclip(args))
+    print("[ResidualNorm] residual_norm:", args.residual_norm)
+    print("[ResidualNorm] residual_stats_batches:", args.residual_stats_batches)
+    print("[ResidualNorm] residual_norm_eps:", args.residual_norm_eps)
+    print("[ResidualNorm] residual_norm_clip:", args.residual_norm_clip)
+    compute_residual_norm_stats(args, encoder, train_loader1, image_size)
 
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
     use_vqops = not args.disable_vqops
@@ -276,6 +334,7 @@ def main(args):
             ref_features = normalize_adaclip_reference_features_if_enabled(args, ref_features)
             mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
+            rfeatures = apply_residual_norm_from_args(args, rfeatures)
 
             lvl_masks = []
             for level in range(args.feature_levels):
@@ -413,6 +472,9 @@ def main(args):
             }
             if vq_ops is not None:
                 state_dict["vq_ops"] = vq_ops.state_dict()
+            residual_norm_state = pack_residual_norm_state(args)
+            if residual_norm_state is not None:
+                state_dict["residual_norm"] = residual_norm_state
             torch.save(state_dict, os.path.join(args.checkpoint_path, f"{args.setting}_epoch_{epoch}_checkpoints.pth"))
 
 
@@ -463,6 +525,10 @@ if __name__ == "__main__":
     parser.add_argument("--disable_vqops", action="store_true")
     parser.add_argument("--train_ref_shot", type=int, default=4)
     parser.add_argument("--num_ref_shot", type=int, default=4)
+    parser.add_argument("--residual_norm", type=str, default="none", choices=RESIDUAL_NORM_MODES)
+    parser.add_argument("--residual_stats_batches", type=int, default=50)
+    parser.add_argument("--residual_norm_eps", type=float, default=1e-6)
+    parser.add_argument("--residual_norm_clip", type=float, default=0.0)
 
     args = parser.parse_args()
     init_seeds(42)
