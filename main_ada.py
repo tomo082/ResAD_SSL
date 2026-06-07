@@ -80,6 +80,25 @@ def get_feature_image_size(args):
     return 224
 
 
+def _should_l2_normalize_adaclip(args):
+    return args.feature_backbone == "adaclip_prompted" and getattr(args, "adaclip_feature_l2norm", False)
+
+
+def normalize_adaclip_feature_maps_if_enabled(args, features):
+    if not _should_l2_normalize_adaclip(args):
+        return features
+    return [F.normalize(feature.float(), p=2, dim=1) for feature in features]
+
+
+def normalize_adaclip_reference_features_if_enabled(args, ref_features):
+    if not _should_l2_normalize_adaclip(args):
+        return ref_features
+    normalized = {}
+    for class_name, features in ref_features.items():
+        normalized[class_name] = tuple(F.normalize(feature.float(), p=2, dim=1) for feature in features)
+    return normalized
+
+
 def build_feature_encoder(args):
     if args.feature_backbone in ("clip_raw", "adaclip_prompted") and len(args.clip_layers) != args.feature_levels:
         raise ValueError(
@@ -199,6 +218,7 @@ def main(args):
     print("[Ada-IBStyle] feature_levels:", args.feature_levels)
     print("[Ada-IBStyle] feat_dims:", feat_dims)
     print("[Ada-IBStyle] first_epoch:", first_stage_epoch)
+    print("[Ada-IBStyle] adaclip_feature_l2norm:", _should_l2_normalize_adaclip(args))
 
     boundary_ops = BoundaryAverager(num_levels=args.feature_levels)
     use_vqops = not args.disable_vqops
@@ -243,6 +263,7 @@ def main(args):
 
             with torch.no_grad():
                 features = encoder(images)
+                features = normalize_adaclip_feature_maps_if_enabled(args, features)
 
             ref_features = get_mc_reference_features(
                 encoder,
@@ -252,6 +273,7 @@ def main(args):
                 args.train_ref_shot,
                 img_size=image_size,
             )
+            ref_features = normalize_adaclip_reference_features_if_enabled(args, ref_features)
             mfeatures = get_mc_matched_ref_features(features, class_names, ref_features)
             rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
 
@@ -423,6 +445,7 @@ if __name__ == "__main__":
     parser.add_argument("--adaclip_cache_dir", type=str, default="~/.cache/adaclip_res")
     parser.add_argument("--adaclip_model", type=str, default="ViT-L-14-336")
     parser.add_argument("--adaclip_return_projected", type=str2bool, nargs="?", const=True, default=False)
+    parser.add_argument("--adaclip_feature_l2norm", action="store_true")
     parser.add_argument("--rank", type=int, default=0)
     parser.add_argument("--first_epoch", type=int, default=1)
 
