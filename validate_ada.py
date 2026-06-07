@@ -7,6 +7,7 @@ import torch.nn.functional as F
 
 from models.modules import get_position_encoding
 from models.utils import get_logp
+from residual_norm import apply_residual_norm_from_args
 from utils import get_residual_features, get_matched_ref_features,get_fourier_residual_features
 from utils import calculate_metrics, applying_EFDM
 from losses.utils import get_logp_a
@@ -93,6 +94,7 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
                 mfeatures = get_matched_ref_features(features, ref_features)
                 rfeatures = get_residual_features(features, mfeatures)
 
+            rfeatures = apply_residual_norm_from_args(args, rfeatures)
             if vq_ops is not None:
                 fdm_features = vq_ops(rfeatures, train=False)
                 rfeatures = applying_EFDM(rfeatures, fdm_features, alpha=args.fdm_alpha)
