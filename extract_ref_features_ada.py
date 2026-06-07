@@ -3,6 +3,7 @@ import os
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import timm
 import torchvision.transforms as T
 import tqdm
@@ -173,6 +174,12 @@ def apply_feature_wavelet_from_args(args, features):
     )
 
 
+def normalize_adaclip_feature_maps_if_enabled(args, features):
+    if args.feature_backbone != "adaclip_prompted" or not args.adaclip_feature_l2norm:
+        return features
+    return [F.normalize(feature.float(), p=2, dim=1) for feature in features]
+
+
 def print_wavelet_config(args):
     if not args.use_wav:
         return
@@ -268,6 +275,7 @@ def main(args):
     print("[RefExtract-Ada] clip_layers:", args.clip_layers)
     print("[RefExtract-Ada] feature_levels:", args.feature_levels)
     print("[RefExtract-Ada] feat_dims:", feat_dims)
+    print("[RefExtract-Ada] adaclip_feature_l2norm:", args.feature_backbone == "adaclip_prompted" and args.adaclip_feature_l2norm)
 
     if args.bgadweight_dir:
         decoders = [load_flow_model(args, feat_dim).to(args.device) for feat_dim in feat_dims]
@@ -305,6 +313,7 @@ def main(args):
             images = batch[0].to(device)
             with torch.no_grad():
                 features = encoder(images)
+                features = normalize_adaclip_feature_maps_if_enabled(args, features)
                 if args.use_wav and args.wav_on == "feature":
                     features = apply_feature_wavelet_from_args(args, features)
             if layer_features is None:
@@ -353,6 +362,7 @@ if __name__ == "__main__":
     parser.add_argument("--adaclip_cache_dir", type=str, default="~/.cache/adaclip_res")
     parser.add_argument("--adaclip_model", type=str, default="ViT-L-14-336")
     parser.add_argument("--adaclip_return_projected", type=str2bool, nargs="?", const=True, default=False)
+    parser.add_argument("--adaclip_feature_l2norm", action="store_true")
     parser.add_argument("--feature_levels", default=4, type=int)
     parser.add_argument("--dinov2_feature_mode", type=str, default="final_projected", choices=DINOV2_FEATURE_MODES)
     parser.add_argument("--dinov2_layers", type=int, nargs="+", default=[4, 8, 12])
