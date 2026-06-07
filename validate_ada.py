@@ -18,6 +18,24 @@ def _should_collect_visual_outputs(args):
     return bool(getattr(args, "save_heatmap_dir", ""))
 
 
+def _should_l2_normalize_adaclip(args):
+    return getattr(args, "feature_backbone", "original") == "adaclip_prompted" and getattr(
+        args, "adaclip_feature_l2norm", False
+    )
+
+
+def normalize_adaclip_feature_maps_if_enabled(args, features):
+    if not _should_l2_normalize_adaclip(args):
+        return features
+    return [F.normalize(feature.float(), p=2, dim=1) for feature in features]
+
+
+def normalize_adaclip_ref_features_if_enabled(args, ref_features):
+    if not _should_l2_normalize_adaclip(args):
+        return ref_features
+    return tuple(F.normalize(feature.float(), p=2, dim=1) for feature in ref_features)
+
+
 def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_features, device, class_name):
     if vq_ops is not None:
         vq_ops.eval()
@@ -26,6 +44,7 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
         estimator.eval()
 
     collect_visual_outputs = _should_collect_visual_outputs(args)
+    ref_features = normalize_adaclip_ref_features_if_enabled(args, ref_features)
     label_list, gt_mask_list = [], []
     image_list = []
     logps1_list = [list() for _ in range(args.feature_levels)]
@@ -47,6 +66,7 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
         with torch.no_grad():
             if getattr(args, "feature_backbone", "original") in ("clip_raw", "adaclip_prompted"):
                 features = encoder(image)
+                features = normalize_adaclip_feature_maps_if_enabled(args, features)
                 mfeatures = get_matched_ref_features(features, ref_features)
                 rfeatures = get_residual_features(features, mfeatures, pos_flag=True)
             elif args.backbone == 'wide_resnet50_2':
