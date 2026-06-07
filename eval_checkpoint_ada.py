@@ -23,6 +23,12 @@ from main_ada import (
 from models.fc_flow import load_flow_model
 from models.modules import MultiScaleOrthogonalProjector
 from models.vq import MultiScaleVQ4
+from residual_norm import (
+    RESIDUAL_NORM_MODES,
+    load_residual_norm_state_into_args,
+    print_residual_norm_stats,
+    validate_residual_norm_args,
+)
 from validate_ada import validate
 
 
@@ -98,6 +104,8 @@ def load_checkpoint_states(args, checkpoint_file, vq_ops, constraintor, estimato
         )
     for estimator, state_dict in zip(estimators, checkpoint["estimators"]):
         estimator.load_state_dict(state_dict)
+
+    load_residual_norm_state_into_args(args, checkpoint)
 
     if getattr(args, "disable_vqops", False):
         print("[VQOps] disabled by --disable_vqops; evaluating without VQOps/EFDM.")
@@ -253,6 +261,7 @@ def save_visual_outputs(output_root, class_name, metrics):
 
 
 def main(args):
+    validate_residual_norm_args(args)
     if args.setting not in SETTINGS:
         raise ValueError(f"Dataset setting must be in {SETTINGS.keys()}, but got {args.setting}.")
     if args.feature_levels != len(args.clip_layers) and args.feature_backbone in ("clip_raw", "adaclip_prompted"):
@@ -279,6 +288,7 @@ def main(args):
     print("[Eval-Ada-IBStyle] test_ref_feature_dir:", args.test_ref_feature_dir)
     print("[Eval-Ada-IBStyle] residual_mode: sq")
     print("[Eval-Ada-IBStyle] adaclip_feature_l2norm:", args.feature_backbone == "adaclip_prompted" and args.adaclip_feature_l2norm)
+    print("[Eval-Ada-IBStyle] requested residual_norm:", args.residual_norm)
     if args.save_heatmap_dir:
         print("[Heatmap] save_heatmap_dir:", args.save_heatmap_dir)
         print("[Heatmap] output: Input / GT / Logps / BScores / Merged comparison figures")
@@ -288,6 +298,10 @@ def main(args):
     print("[Eval-Ada-IBStyle] feat_dims:", feat_dims)
     vq_ops, constraintor, estimators = build_modules(args, feat_dims)
     vq_ops = load_checkpoint_states(args, checkpoint_file, vq_ops, constraintor, estimators)
+    print("[Eval-Ada-IBStyle] residual_norm:", args.residual_norm)
+    print("[Eval-Ada-IBStyle] residual_norm_eps:", args.residual_norm_eps)
+    print("[Eval-Ada-IBStyle] residual_norm_clip:", args.residual_norm_clip)
+    print_residual_norm_stats(getattr(args, "residual_norm_stats", None))
 
     encoder.eval()
     if vq_ops is not None:
@@ -390,6 +404,10 @@ def build_parser():
     parser.add_argument("--fdm_alpha", type=float, default=0.4)
     parser.add_argument("--num_embeddings", type=int, default=1536)
     parser.add_argument("--disable_vqops", action="store_true")
+    parser.add_argument("--residual_norm", type=str, default="none", choices=RESIDUAL_NORM_MODES)
+    parser.add_argument("--residual_stats_batches", type=int, default=50)
+    parser.add_argument("--residual_norm_eps", type=float, default=1e-6)
+    parser.add_argument("--residual_norm_clip", type=float, default=0.0)
     return parser
 
 
