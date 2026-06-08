@@ -141,6 +141,7 @@ def build_feature_encoder(args):
             layers=args.clip_layers,
             image_size=args.clip_image_size,
             return_projected=args.adaclip_return_projected,
+            prompt_mode=getattr(args, "adaclip_prompt_mode", "hybrid"),
             freeze=True,
             device=args.device,
         ).to(args.device)
@@ -272,6 +273,7 @@ def main(args):
     print("[Ada-IBStyle] feat_dims:", feat_dims)
     print("[Ada-IBStyle] first_epoch:", first_stage_epoch)
     print("[Ada-IBStyle] adaclip_feature_l2norm:", _should_l2_normalize_adaclip(args))
+    print("[Ada-IBStyle] adaclip_prompt_mode:", getattr(args, "adaclip_prompt_mode", "hybrid"))
     print("[ResidualNorm] residual_norm:", args.residual_norm)
     print("[ResidualNorm] residual_stats_batches:", args.residual_stats_batches)
     print("[ResidualNorm] residual_norm_eps:", args.residual_norm_eps)
@@ -507,6 +509,7 @@ if __name__ == "__main__":
     parser.add_argument("--adaclip_cache_dir", type=str, default="~/.cache/adaclip_res")
     parser.add_argument("--adaclip_model", type=str, default="ViT-L-14-336")
     parser.add_argument("--adaclip_return_projected", type=str2bool, nargs="?", const=True, default=False)
+    parser.add_argument("--adaclip_prompt_mode", type=str, default="hybrid", choices=["hybrid", "static_only", "dynamic_only"])
     parser.add_argument("--adaclip_feature_l2norm", action="store_true")
     parser.add_argument("--rank", type=int, default=0)
     parser.add_argument("--first_epoch", type=int, default=1)

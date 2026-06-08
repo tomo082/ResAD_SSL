@@ -288,6 +288,7 @@ def main(args):
     print("[Eval-Ada-IBStyle] test_ref_feature_dir:", args.test_ref_feature_dir)
     print("[Eval-Ada-IBStyle] residual_mode: sq")
     print("[Eval-Ada-IBStyle] adaclip_feature_l2norm:", args.feature_backbone == "adaclip_prompted" and args.adaclip_feature_l2norm)
+    print("[Eval-Ada-IBStyle] adaclip_prompt_mode:", getattr(args, "adaclip_prompt_mode", "hybrid"))
     print("[Eval-Ada-IBStyle] requested residual_norm:", args.residual_norm)
     if args.save_heatmap_dir:
         print("[Heatmap] save_heatmap_dir:", args.save_heatmap_dir)
@@ -394,6 +395,7 @@ def build_parser():
     parser.add_argument("--adaclip_cache_dir", type=str, default="~/.cache/adaclip_res")
     parser.add_argument("--adaclip_model", type=str, default="ViT-L-14-336")
     parser.add_argument("--adaclip_return_projected", type=str2bool, nargs="?", const=True, default=False)
+    parser.add_argument("--adaclip_prompt_mode", type=str, default="hybrid", choices=["hybrid", "static_only", "dynamic_only"])
     parser.add_argument("--adaclip_feature_l2norm", action="store_true")
 
     parser.add_argument("--flow_arch", type=str, default="flow_model")

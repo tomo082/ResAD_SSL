@@ -10,6 +10,7 @@ import torch.nn as nn
 
 
 _OPENAI_CLIP_BPE_URL = "https://openaipublic.azureedge.net/clip/bpe_simple_vocab_16e6.txt.gz"
+ADACLIP_PROMPT_MODES = ("hybrid", "static_only", "dynamic_only")
 
 
 class _FeatureInfo:
@@ -26,7 +27,7 @@ class AdaCLIPPromptedFeatureExtractor(nn.Module):
 
     clip_layers are user-facing 1-indexed transformer block numbers. The
     AdaCLIP_res model must expose:
-        extract_prompted_features(images, layers, return_projected=False)
+        extract_prompted_features(images, layers, return_projected=False, prompt_mode="hybrid")
     and return a dict keyed by layer names such as "layer6".
     """
 
@@ -41,6 +42,7 @@ class AdaCLIPPromptedFeatureExtractor(nn.Module):
         layers=(6, 12, 18, 24),
         image_size=336,
         return_projected=False,
+        prompt_mode="hybrid",
         freeze=True,
         device="cuda:0",
     ):
@@ -54,12 +56,18 @@ class AdaCLIPPromptedFeatureExtractor(nn.Module):
         self.layers = tuple(int(layer) for layer in layers)
         self.image_size = int(image_size)
         self.return_projected = bool(return_projected)
+        self.prompt_mode = str(prompt_mode)
         self.freeze = freeze
         self.device_name = device
         self._debug_printed = False
 
         if len(self.layers) == 0:
             raise ValueError("adaclip_prompted requires at least one clip layer.")
+        if self.prompt_mode not in ADACLIP_PROMPT_MODES:
+            raise ValueError(
+                f"Unsupported adaclip_prompt_mode: {self.prompt_mode}. "
+                f"Expected one of {ADACLIP_PROMPT_MODES}."
+            )
         if not self.checkpoint and not self.checkpoint_url:
             raise ValueError(
                 "--feature_backbone adaclip_prompted requires --adaclip_checkpoint "
@@ -271,6 +279,7 @@ class AdaCLIPPromptedFeatureExtractor(nn.Module):
         print(f"adaclip_model = {self.model_name}")
         print(f"clip_layers = {list(self.layers)}")
         print(f"return_projected = {self.return_projected}")
+        print(f"prompt_mode = {self.prompt_mode}")
         for layer, feature in zip(self.layers, features):
             print(f"layer{layer} shape = {tuple(feature.shape)}")
         print(f"checkpoint = {self.checkpoint_path}")
@@ -285,12 +294,14 @@ class AdaCLIPPromptedFeatureExtractor(nn.Module):
                         images,
                         layers=list(self.layers),
                         return_projected=self.return_projected,
+                        prompt_mode=self.prompt_mode,
                     )
             else:
                 features = self.model.extract_prompted_features(
                     images,
                     layers=list(self.layers),
                     return_projected=self.return_projected,
+                    prompt_mode=self.prompt_mode,
                 )
         features = self._ordered_features(features)
         self._debug_shapes(features)

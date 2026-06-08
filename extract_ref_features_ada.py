@@ -225,6 +225,7 @@ def build_feature_encoder(args, device):
             layers=args.clip_layers,
             image_size=args.clip_image_size,
             return_projected=args.adaclip_return_projected,
+            prompt_mode=getattr(args, "adaclip_prompt_mode", "hybrid"),
             freeze=True,
             device=device,
         ).to(device)
@@ -276,6 +277,7 @@ def main(args):
     print("[RefExtract-Ada] feature_levels:", args.feature_levels)
     print("[RefExtract-Ada] feat_dims:", feat_dims)
     print("[RefExtract-Ada] adaclip_feature_l2norm:", args.feature_backbone == "adaclip_prompted" and args.adaclip_feature_l2norm)
+    print("[RefExtract-Ada] adaclip_prompt_mode:", getattr(args, "adaclip_prompt_mode", "hybrid"))
 
     if args.bgadweight_dir:
         decoders = [load_flow_model(args, feat_dim).to(args.device) for feat_dim in feat_dims]
@@ -362,6 +364,7 @@ if __name__ == "__main__":
     parser.add_argument("--adaclip_cache_dir", type=str, default="~/.cache/adaclip_res")
     parser.add_argument("--adaclip_model", type=str, default="ViT-L-14-336")
     parser.add_argument("--adaclip_return_projected", type=str2bool, nargs="?", const=True, default=False)
+    parser.add_argument("--adaclip_prompt_mode", type=str, default="hybrid", choices=["hybrid", "static_only", "dynamic_only"])
     parser.add_argument("--adaclip_feature_l2norm", action="store_true")
     parser.add_argument("--feature_levels", default=4, type=int)
     parser.add_argument("--dinov2_feature_mode", type=str, default="final_projected", choices=DINOV2_FEATURE_MODES)
