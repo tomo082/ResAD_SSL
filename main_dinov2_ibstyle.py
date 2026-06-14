@@ -40,7 +40,6 @@ from validate import validate
 warnings.filterwarnings("ignore")
 
 TOTAL_SHOT = 4
-FIRST_STAGE_EPOCH = 1
 SETTINGS = {
     "visa_to_mvtec": VISA_TO_MVTEC,
     "mvtec_to_visa": MVTEC_TO_VISA,
@@ -190,6 +189,7 @@ def run_shape_test(args, encoder):
 
 
 def main(args):
+    first_stage_epoch = args.first_epoch
     if args.setting not in SETTINGS:
         raise ValueError(f"Dataset setting must be in {SETTINGS.keys()}, but got {args.setting}.")
     classes = SETTINGS[args.setting]
@@ -372,6 +372,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_embeddings", type=int, default=1536)
     parser.add_argument("--train_ref_shot", type=int, default=4)
     parser.add_argument("--num_ref_shot", type=int, default=4)
+    parser.add_argument("--first_epoch", type=int, default=1)
     args = parser.parse_args()
     init_seeds(42)
     torch.backends.cuda.matmul.allow_tf32 = True
