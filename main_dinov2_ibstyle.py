@@ -290,7 +290,7 @@ def main(args):
             optimizer0.step()
 
             rfeatures = [rfeature.detach().clone() for rfeature in rfeatures]
-            flow_loss, flow_num = train2(args, rfeatures, estimators, optimizer1, lvl_masks, boundary_ops, epoch, N_batch=n_batch, FIRST_STAGE_EPOCH=FIRST_STAGE_EPOCH)
+            flow_loss, flow_num = train2(args, rfeatures, estimators, optimizer1, lvl_masks, boundary_ops, epoch, N_batch=n_batch, FIRST_STAGE_EPOCH=first_stage_epoch)
             loss_totals["flow"][0] += flow_loss
             loss_totals["flow"][1] += flow_num
 
