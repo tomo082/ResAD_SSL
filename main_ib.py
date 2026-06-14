@@ -43,6 +43,11 @@ SETTINGS = {'visa_to_mvtec': VISA_TO_MVTEC, 'mvtec_to_visa': MVTEC_TO_VISA,
             'mvtec_to_brats': MVTEC_TO_BRATS, 'mvtec_to_mvtec': MVTEC_TO_MVTEC,'mvtecfew_to_mvtec': MVTECFEW_TO_MVTEC}
 
 
+def unpack_train_batch(batch):
+    images, _, masks, class_names = batch[:4]
+    return images, masks, class_names
+
+
 def main(args):
     if args.setting in SETTINGS.keys():
         CLASSES = SETTINGS[args.setting]
@@ -142,7 +147,7 @@ def main(args):
         progress_bar.set_description(f"Epoch[{epoch}/{args.epochs}]")
         for step, batch in enumerate(train_loader):
             progress_bar.update(1)
-            images, _, masks, class_names,anomaly_types = batch
+            images, masks, class_names = unpack_train_batch(batch)
             
             images = images.to(args.device)
             masks = masks.to(args.device)
@@ -302,7 +307,6 @@ def main(args):
                 # 各クラスの評価結果から特徴量とラベルデータを一時的に保存
                 current_epoch_class_data_for_saving[class_name_eval] = {
                     'features': metrics['features'],
-                    'anomaly_types': metrics['anomaly_types'],
                     'gts_labels': metrics['gts_labels']
                     }             
             s1_res = np.array(s1_res)
@@ -339,15 +343,9 @@ def main(args):
                     # これにより、常に同じファイル名で上書き保存され、
                     # 最終的にベストスコア時のデータだけが残る
                     features_filename = os.path.join(class_specific_save_dir, 'best_features.npy')
-                    anomaly_types_filename = os.path.join(class_specific_save_dir, 'best_anomaly_types.npy')
                     gts_labels_filename = os.path.join(class_specific_save_dir, 'best_gts_labels.npy')
 
                     np.save(features_filename, data['features'])
-                    
-                    # anomaly_types をテキストファイルとして保存
-                    with open(anomaly_types_filename, 'w') as f:
-                        for item in data['anomaly_types']:
-                            f.write(str(item) + '\n') # 各要素を1行ずつ書き込む
                             
                     np.save(gts_labels_filename, data['gts_labels'])
                     print(f"  - クラス '{class_name_to_save}': 最良スコア時のデータを {class_specific_save_dir} に上書き保存しました。")
