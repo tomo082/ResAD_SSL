@@ -228,7 +228,7 @@ def main(args):
         for estimator in estimators:
             estimator.train()
 
-        train_loader = train_loader1 if epoch < FIRST_STAGE_EPOCH else train_loader2
+        train_loader = train_loader1 if epoch < first_stage_epoch else train_loader2
         loss_totals = {name: [0, 0] for name in ["vq", "occ", "occn", "occa", "ort", "flow"]}
         progress_bar = tqdm(total=len(train_loader))
         progress_bar.set_description(f"Epoch[{epoch}/{args.epochs}]")
