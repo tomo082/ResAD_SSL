@@ -186,7 +186,7 @@ class MVTECANO(Dataset):
             all_mask_paths.extend(mask_paths)
             all_class_names.extend(class_names)
             all_anomaly_types.extend(anomaly_types_from_load_data) # anomaly_types を追加
-        return all_image_paths, all_labels, all_mask_paths, all_class_names # anomaly_types も返す
+        return all_image_paths, all_labels, all_mask_paths, all_class_names, all_anomaly_types # anomaly_types も返す
 
 
 class MVTEC(Dataset):
@@ -303,7 +303,7 @@ class MVTEC(Dataset):
                 anomaly_types.extend([img_type] * len(img_fpath_list)) # 異常タイプ名を追加
                     
         class_names_list = [class_name] * len(image_paths) # 変数名が衝突しないように変更
-        return image_paths, labels, mask_paths, class_names_lists # anomaly_types も返す
+        return image_paths, labels, mask_paths, class_names_list, anomaly_types # anomaly_types も返す
     
     def _load_all_data(self, class_names=None):
         all_image_paths = []
