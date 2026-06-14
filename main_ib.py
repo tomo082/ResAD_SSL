@@ -43,6 +43,11 @@ SETTINGS = {'visa_to_mvtec': VISA_TO_MVTEC, 'mvtec_to_visa': MVTEC_TO_VISA,
             'mvtec_to_brats': MVTEC_TO_BRATS, 'mvtec_to_mvtec': MVTEC_TO_MVTEC}
 
 
+def unpack_train_batch(batch):
+    images, _, masks, class_names = batch[:4]
+    return images, masks, class_names
+
+
 def main(args):
     if args.setting in SETTINGS.keys():
         CLASSES = SETTINGS[args.setting]
@@ -142,7 +147,7 @@ def main(args):
         progress_bar.set_description(f"Epoch[{epoch}/{args.epochs}]")
         for step, batch in enumerate(train_loader):
             progress_bar.update(1)
-            images, _, masks, class_names = batch
+            images, masks, class_names = unpack_train_batch(batch)
             
             images = images.to(args.device)
             masks = masks.to(args.device)
