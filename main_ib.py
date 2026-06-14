@@ -49,6 +49,8 @@ def unpack_train_batch(batch):
 
 
 def main(args):
+    first_stage_epoch = args.first_epoch
+    print("[Training] first_epoch:", first_stage_epoch)
     if args.setting in SETTINGS.keys():
         CLASSES = SETTINGS[args.setting]
     else:
@@ -133,7 +135,7 @@ def main(args):
         constraintor.train()
         for estimator in estimators:
             estimator.train()
-        if epoch < FIRST_STAGE_EPOCH:
+        if epoch < first_stage_epoch:
             train_loader = train_loader1
         else:
             train_loader = train_loader2
@@ -209,7 +211,7 @@ def main(args):
             # detach the rfeatures for flow optimization
             rfeatures = [rfeature.detach().clone() for rfeature in rfeatures]
             # train flow corresponding to with neck
-            loss, num = train2(args, rfeatures, estimators, optimizer1, lvl_masks, boundary_ops, epoch, N_batch=N_batch, FIRST_STAGE_EPOCH=FIRST_STAGE_EPOCH)
+            loss, num = train2(args, rfeatures, estimators, optimizer1, lvl_masks, boundary_ops, epoch, N_batch=N_batch, FIRST_STAGE_EPOCH=first_stage_epoch)
             train_loss_total_flow += loss
             total_num_flow += num
         
@@ -384,6 +386,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint_path', type=str, default="./checkpoints/")
     parser.add_argument('--eval_freq', type=int, default=1)
     parser.add_argument('--backbone', type=str, default="imagebind")
+    parser.add_argument('--first_epoch', type=int, default=FIRST_STAGE_EPOCH)
     #parser.add_argument('--residual', type = True, default=True)
     
     # flow parameters
