@@ -8,10 +8,13 @@ import kornia as K
 
 class ImageBindModel(nn.Module):
 
-    def __init__(self, device='cuda:0'):
+    DEFAULT_CHECKPOINT_PATH = '/home/ueno/pretrained_weights/imagebind/imagebind_huge.pth'
+
+    def __init__(self, device='cuda:0', checkpoint_path=None):
         super(ImageBindModel, self).__init__()
-#DLboxで使うため
-        imagebind_ckpt_path = '/home/ueno/pretrained_weights/imagebind/imagebind_huge.pth'
+        # Keep the DLBox path as the default used by the existing training scripts.
+        imagebind_ckpt_path = checkpoint_path or self.DEFAULT_CHECKPOINT_PATH
+        self.checkpoint_path = imagebind_ckpt_path
         
         print (f'Initializing visual encoder from {imagebind_ckpt_path} ...')
         self.visual_encoder, self.visual_hidden_size = imagebind_model.imagebind_huge({})

@@ -14,28 +14,44 @@ from losses.utils import get_logp_a
 warnings.filterwarnings('ignore')
 
 
-def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_features, device, class_name):
-    vq_ops.eval()
+def validate(
+    args,
+    encoder,
+    vq_ops,
+    constraintor,
+    estimators,
+    test_loader,
+    ref_features,
+    device,
+    class_name,
+    return_maps=False,
+):
+    if vq_ops is not None:
+        vq_ops.eval()
     constraintor.eval()
     for estimator in estimators:  
         estimator.eval()
     
     label_list, gt_mask_list = [], []
+    test_img_list = [] if return_maps else None
     logps1_list = [list() for _ in range(args.feature_levels)]
     logps2_list = [list() for _ in range(args.feature_levels)]
     progress_bar = tqdm(total=len(test_loader))
     progress_bar.set_description(f"Evaluating")
+    size = None
     for idx, batch in enumerate(test_loader):
         progress_bar.update(1)
         
         image, label, mask = batch[0], batch[1], batch[2]  
         gt_mask_list.append(mask.squeeze(1).cpu().numpy().astype(bool))
         label_list.append(label.cpu().numpy().astype(bool).ravel())
+        if return_maps:
+            test_img_list.append(image.detach().cpu().numpy())
         
         image = image.to(device)
         size = image.shape[-1]
         
-        with torch.no_grad():
+        with torch.inference_mode():
             if args.backbone == 'wide_resnet50_2':
                 features = encoder(image)
                 mfeatures = get_matched_ref_features(features, ref_features)
@@ -56,8 +72,9 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
                 mfeatures = get_matched_ref_features(features, ref_features)
                 rfeatures = get_residual_features(features, mfeatures)
             
-            fdm_features = vq_ops(rfeatures, train=False)
-            rfeatures = applying_EFDM(rfeatures, fdm_features, alpha=args.fdm_alpha)
+            if vq_ops is not None:
+                fdm_features = vq_ops(rfeatures, train=False)
+                rfeatures = applying_EFDM(rfeatures, fdm_features, alpha=args.fdm_alpha)
             rfeatures = constraintor(*rfeatures)
         
             for l in range(args.feature_levels):
@@ -85,6 +102,9 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
                 logps2_list[l].append(sa.reshape(bs, h, w))
     
     progress_bar.close()
+
+    if size is None:
+        raise ValueError(f"No test images were found for class '{class_name}'.")
     
     labels = np.concatenate(label_list)
     gt_masks = np.concatenate(gt_mask_list, axis=0)
@@ -101,6 +121,13 @@ def validate(args, encoder, vq_ops, constraintor, estimators, test_loader, ref_f
     metrics['scores1'] = [img_auc1, img_ap1, img_f1_score1, pix_auc1, pix_ap1, pix_f1_score1, pix_aupro1]
     metrics['scores2'] = [img_auc2, img_ap2, img_f1_score2, pix_auc2, pix_ap2, pix_f1_score2, pix_aupro2]
     metrics['scores'] = [img_auc, img_ap, img_f1_score, pix_auc, pix_ap, pix_f1_score, pix_aupro]
+    if return_maps:
+        metrics['test_imgs'] = np.concatenate(test_img_list, axis=0)
+        metrics['labels'] = labels
+        metrics['gt_masks'] = gt_masks
+        metrics['score_maps_logps'] = scores1
+        metrics['score_maps_bscores'] = scores2
+        metrics['score_maps'] = scores
     
     return metrics
 
@@ -113,7 +140,7 @@ def convert_to_anomaly_scores(logps_list, feature_levels=3, class_name=None, siz
         probs = torch.exp(logps) # convert to probs in range [0:1]
         # upsample
         normal_map[l] = F.interpolate(probs.unsqueeze(1),
-            size=size, mode='bilinear', align_corners=True).squeeze().cpu().numpy()
+            size=size, mode='bilinear', align_corners=True).squeeze(1).cpu().numpy()
     
     # score aggregation
     scores = np.zeros_like(normal_map[0])
@@ -136,7 +163,7 @@ def aggregate_anomaly_scores(logps_list, feature_levels=3, class_name=None, size
         probs = torch.cat(logps_list[l], dim=0)  
         # upsample
         abnormal_map[l] = F.interpolate(probs.unsqueeze(1),
-            size=size, mode='bilinear', align_corners=True).squeeze().cpu().numpy()
+            size=size, mode='bilinear', align_corners=True).squeeze(1).cpu().numpy()
     
     # score aggregation
     scores = np.zeros_like(abnormal_map[0])
