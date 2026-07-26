@@ -183,6 +183,56 @@ For Imagebind as feature extractor, you can download the pre-trained ImageBind m
 python main_ib.py --setting visa_to_mvtec --train_dataset_dir /path/to/your/dataset --test_dataset_dir /path/to/your/dataset  --test_ref_feature_dir ./ref_features/ib/mvtec_4shot --num_ref_shot 4 --device cuda:0
 ```
 
+## Evaluating ImageBind Checkpoints and Saving Heatmaps
+
+`eval_ib_heatmap.py` loads a checkpoint saved by `main_ib.py`, evaluates it
+without training, and saves five-panel images containing Input, Ground Truth,
+Logps, BScore, and Merged anomaly maps. It supports `mvtec`, `visa`, `btad`,
+`mvtec3d`, `mpdd`, `mvtecloco`, and `brats`; the aliases `mvtec_3d`,
+`mvtec-3d`, `mvtec_loco`, and `mvtec-loco` are also accepted.
+
+The ImageBind checkpoint can be downloaded from the link above. The DLBox
+default is `/data/home/ueno/pretrained_weights/imagebind/imagebind_huge.pth`; use
+`--imagebind_checkpoint` when it is stored elsewhere. Evaluation checkpoints
+must contain `constraintor` and four `estimators`. When `vq_ops` is present it
+is loaded and used; checkpoints without it are evaluated without VQ/EFDM.
+
+Reference features use the following layout:
+
+```text
+<test_ref_feature_dir>/<class_name>/
+  layer1.npy
+  layer2.npy
+  layer3.npy
+  layer4.npy
+```
+
+Evaluate all MVTec AD classes:
+
+```bash
+python eval_ib_heatmap.py \
+  --dataset mvtec \
+  --checkpoint /path/to/checkpoint.pth \
+  --test_dataset_dir /path/to/mvtec \
+  --test_ref_feature_dir ./ref_features/ib/mvtec_4shot \
+  --output_dir ./heatmaps \
+  --num_ref_shot 4 \
+  --total_ref_shot 4 \
+  --device cuda:0
+```
+
+Add `--class_name screw` to evaluate only one class. `--num_ref_shot` selects
+shots from features extracted with `--total_ref_shot` total shots. Heatmaps
+for all test images are saved by default. `--max_images N` limits only the
+number of PNGs per class and never limits metric evaluation; `--max_images 0`
+runs evaluation without saving PNGs. Existing PNGs are skipped unless
+`--overwrite` is supplied.
+
+Logps is the flow log-likelihood anomaly map, BScore is the abnormal
+distribution score, and Merged is their arithmetic mean. Outputs are written
+under `<output_dir>/<dataset>/<class_name>/`, with aggregate `metrics.json`
+and `metrics.csv` stored in `<output_dir>/<dataset>/`.
+
 ## Citation
 
 If you find this repository useful, please consider citing our work:
