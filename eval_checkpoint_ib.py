@@ -39,7 +39,7 @@ warnings.filterwarnings("ignore")
 TOTAL_SHOT = 4
 SETTINGS = {
     "visa_to_mvtec": VISA_TO_MVTEC,
-    "visa_to_mvyecloco":VISA_TO_MVTECLOCO,
+    "visa_to_mvtecloco":VISA_TO_MVTECLOCO,
     "mvtec_to_visa": MVTEC_TO_VISA,
     "mvtec_to_btad": MVTEC_TO_BTAD,
     "mvtec_to_mvtec3d": MVTEC_TO_MVTEC3D,
