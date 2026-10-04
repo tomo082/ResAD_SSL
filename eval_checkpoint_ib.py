@@ -18,6 +18,7 @@ from classes import (
     MVTEC_TO_MVTECLOCO,
     MVTEC_TO_VISA,
     VISA_TO_MVTEC,
+    VISA_TO_MVTECLOCO,
 )
 from datasets.brats import BRATS
 from datasets.btad import BTAD
@@ -38,6 +39,7 @@ warnings.filterwarnings("ignore")
 TOTAL_SHOT = 4
 SETTINGS = {
     "visa_to_mvtec": VISA_TO_MVTEC,
+    "visa_to_mvyecloco":VISA_TO_MVTECLOCO,
     "mvtec_to_visa": MVTEC_TO_VISA,
     "mvtec_to_btad": MVTEC_TO_BTAD,
     "mvtec_to_mvtec3d": MVTEC_TO_MVTEC3D,
