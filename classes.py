@@ -32,7 +32,10 @@ MVTEC_TO_MVTECLOCO = {'seen': ['bottle', 'cable', 'capsule', 'carpet', 'grid',
                              'tile', 'toothbrush', 'transistor', 'wood', 'zipper'],
                  'unseen': ['breakfast_box', 'juice_bottle', 'pushpins', 'screw_bag',
                             'splicing_connectors']}
-
+VISA_TO_MVTECLOCO = {'seen': ['candle', 'capsules', 'cashew', 'chewinggum', 'fryum',
+'macaroni1', 'macaroni2', 'pcb1', 'pcb2', 'pcb3', 'pcb4', 'pipe_fryum'],
+                 'unseen': ['breakfast_box', 'juice_bottle', 'pushpins', 'screw_bag',
+                            'splicing_connectors']}
 MVTEC_TO_BRATS = {'seen': ['bottle', 'cable', 'capsule', 'carpet', 'grid',
                              'hazelnut', 'leather', 'metal_nut', 'pill', 'screw',
                              'tile', 'toothbrush', 'transistor', 'wood', 'zipper'],
